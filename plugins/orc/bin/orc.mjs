@@ -145,8 +145,15 @@ function readMd(f) {
 }
 function writeMd(f, fm, body) { write(f, `---\n${dumpYaml(fm)}---\n${(body || '').replace(/^\n+/, '')}`); }
 function globRe(g, forCmd = false) {
-  let r = g.replace(/[.+^${}()|\\]/g, '\\$&');
-  r = forCmd ? r.replace(/\*/g, '.*').replace(/\?/g, '.') : r.replace(/\*\*\//g, '(?:.*/)?').replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]');
+  let r = '';
+  for (let i = 0; i < g.length; i++) {
+    const c = g[i];
+    if (c === '*') {
+      if (!forCmd && g[i + 1] === '*') { i++; if (g[i + 1] === '/') { i++; r += '(?:.*/)?'; } else r += '.*'; }
+      else r += forCmd ? '.*' : '[^/]*';
+    } else if (c === '?') r += forCmd ? '.' : '[^/]';
+    else r += c.replace(/[.+^${}()|\\\[\]]/, '\\$&');
+  }
   return new RegExp(forCmd ? r : `^${r}$`, 'i');
 }
 const matchPath = (globs, rel) => (globs || []).some(g => globRe(g).test(rel) || globRe(g).test(path.posix.basename(rel)));
