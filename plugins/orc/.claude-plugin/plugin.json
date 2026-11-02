@@ -1,0 +1,7 @@
+{
+  "name": "orc",
+  "version": "0.1.0",
+  "description": "Gate-free development orchestrator: prompt, three easy questions, built, checked, merged, on a dashboard. Stops only for secrets, destructive commands and production.",
+  "author": { "name": "Lev Furmanov" },
+  "keywords": ["orchestration", "tickets", "lessons", "dashboard", "non-engineers"]
+}

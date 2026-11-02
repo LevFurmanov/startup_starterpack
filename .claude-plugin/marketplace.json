@@ -1,0 +1,11 @@
+{
+  "name": "orc",
+  "owner": { "name": "Lev Furmanov" },
+  "plugins": [
+    {
+      "name": "orc",
+      "source": "./plugins/orc",
+      "description": "Gate-free development orchestrator for Claude Code."
+    }
+  ]
+}

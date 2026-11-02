@@ -1,0 +1,45 @@
+# orc configuration · edit freely · `orc explain` describes every section
+project: "{{name}}"
+level: 0                      # 0 = one ticket at a time · 1 = parallel tickets, roles
+store: {{store}}              # vault | postgres (orc store postgres)
+postgres:
+  url_env: ORC_DATABASE_URL   # the CLI reads this variable; agents never do
+check: {{check}}              # must pass before merge · null = each ticket adds a smoke check
+base_branch: {{base}}
+engine: subagent              # subagent | headless
+
+models:                       # aliases resolve to the current generation
+  control: inherit
+  scout: haiku
+  worker: { S: sonnet, M: sonnet, L: opus, chore: haiku }
+  reviewer: opus
+
+review:
+  S: none
+  M: [bug]
+  L: [bug, proof, simplify]
+  max_fix_rounds: 2
+
+caps:
+  turns: { scout: 15, worker: 40, reviewer: 20 }
+  budget_usd: { S: 2, M: 8, L: 25 }
+  stall_minutes: 10
+
+# a title or scout file list containing one of these words forces size L
+forced_L: [auth, login, password, payment, billing, stripe, delete, migration, secret, token]
+
+pricing:                      # USD per million tokens · list prices 2026-10
+  fable:  { in: 10, out: 50, cache_read: 1 }
+  opus:   { in: 4, out: 20, cache_read: 0.2 }
+  sonnet: { in: 2, out: 10, cache_read: 0.2 }
+  haiku:  { in: 0.1, out: 0.5, cache_read: 0.01 }
+
+lessons:
+  guide_cap_lines: 30
+  promote_to_guide_at: 2      # seen twice → .claude/rules/
+  promote_to_enforce_at: 3    # seen three times with a check → run by orc check
+
+security:                     # the only three reasons orc ever stops
+  secrets: ["**/.env*", "**/*secret*", "**/*credential*", "**/*.pem", "**/*.key", "**/id_rsa*"]
+  destructive: ["git push --force*", "git push -f*", "git reset --hard*", "git branch -D*", "git clean -fd*", "rm -rf *", "DROP TABLE*", "*migrate reset*", "TRUNCATE *"]
+  production: ["vercel --prod*", "npm publish*", "ssh *", "kubectl apply*", "docker push*", "fly deploy*", "git push * production*"]

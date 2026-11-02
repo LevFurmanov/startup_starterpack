@@ -1,0 +1,23 @@
+{
+  "description": "orc guards and accounting. Every hook is a no-op outside a project with orc.yaml.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/orc.mjs\" hook guard", "timeout": 10 }]
+      }
+    ],
+    "SubagentStop": [
+      { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/orc.mjs\" hook subagent-stop", "timeout": 30 }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/orc.mjs\" hook stop", "timeout": 30 }] }
+    ],
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/orc.mjs\" hook session-start", "timeout": 10 }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/orc.mjs\" hook prompt", "timeout": 10 }] }
+    ]
+  }
+}
