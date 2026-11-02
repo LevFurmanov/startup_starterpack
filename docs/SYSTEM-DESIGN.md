@@ -67,21 +67,30 @@ $ orc explain overview
 ```
 $ orc explain loop
 
+  Two halves. The conversation runs in your Claude Code session. The
+  engine is code: `orc run T-###` drives every step below the line and
+  launches each agent as its own headless `claude -p` process with the
+  model, turn cap, dollar budget, tool list and security guard set by orc.
+
   step        who        model        reads                  writes
   ─────────── ────────── ──────────── ────────────────────── ─────────────────────
-  intake      control    session      your prompt            ticket T-###, asking
-  scout       scout      haiku        repo, ref. lessons     scout report, size
+  intake      control    session      your prompt            ticket T-###
+  scout       engine     haiku        repo, ref. lessons     scout report, size
   questions   control    session      scout report           decisions in ticket
   spec        control    session      answers                spec ≤60 lines
-  dispatch    orc        none         spec                   branch, worktree, caps
-  build       worker     sonnet|opus  spec + last findings   commits on orc/T-###
-  check       orc        none         worktree               checks: pass|fail
-  review      reviewer   opus         spec, diff, checks     findings per AC
-  fix         worker     same         findings               commits, ≤2 rounds
-  merge       orc        none         branch                 one commit on main
-  account     hook       none         transcripts            tokens, cost
-  learn       orc        none         review candidates      lessons, promotions
-  report      orc        none         store                  done card, dashboard
+  ───── orc run T-### ─────────────────────────────────────────────────────────
+  dispatch    engine     none         spec                   branch, worktree, caps
+  build       engine     sonnet|opus  spec + last findings   commits on orc/T-###
+  check       engine     none         worktree               checks: pass|fail
+  review      engine     opus         spec, diff, checks     findings per AC
+  fix         engine     same         findings               commits, ≤2 rounds
+  merge       engine     none         branch                 one commit on main
+  account     engine     none         json result per agent  tokens, cost
+  learn       engine     none         work + review reports  lessons, promotions
+  report      engine     none         store                  done card, dashboard
+
+  From a plain terminal, `orc run "add a login page"` does all of it with
+  default answers and no questions.
 
   what you see, in order
 
@@ -462,9 +471,9 @@ $ orc explain cost
 
   no agent types a number. The harness does.
 
-    subagent engine   SubagentStop hook → agent_transcript_path → usage per
+    subagent engine   (fallback) SubagentStop hook → agent_transcript_path → usage per
                       assistant message → turns rows → ticket totals
-    headless engine   claude -p --output-format json → usage, total_cost_usd
+    headless engine   (default) claude -p --output-format json → usage, total_cost_usd
                       → one turns row per run · --max-budget-usd enforced by
                       Claude Code itself
 
@@ -572,7 +581,8 @@ $ orc explain commands
   setup     orc init [--store vault|postgres]   orc doctor   orc explain [topic]
   tickets   orc new "<title>" [--size S|M|L] [--type feature|fix|chore]
             orc ticket show|list|set T-014      orc ready     orc needs-you
-  run       orc dispatch T-014 [--engine subagent|headless]
+  run       orc run T-014 | orc run "<request>"    the engine, start to done card
+  steps     orc scout T-014 --run    orc dispatch T-014 [--model m]
             orc check T-014    orc review T-014    orc merge T-014
             orc undo T-014     orc resume T-014    orc close T-014 --failed
   see       orc status   orc dashboard [--open] [--watch]   orc cost [T-014|--week]
@@ -581,8 +591,8 @@ $ orc explain commands
   store     orc store status|migrate|import|export|postgres
   internal  orc hook <event>   called by hooks.json, not by you
 
-  /orc <prompt> inside Claude Code runs new → scout → questions → spec →
-  dispatch → report by calling the commands above. You rarely type them.
+  /orc <prompt> inside Claude Code runs new → scout → questions → spec,
+  then hands the ticket to `orc run`. You rarely type the step commands.
 ```
 
 ```

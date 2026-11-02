@@ -164,6 +164,7 @@ function git(root, args, opts = {}) {
   return { out: (r.stdout || '').trim(), err: (r.stderr || '').trim(), ok: r.status === 0 };
 }
 function sh(cmd, cwd) { const r = spawnSync(cmd, { cwd, shell: true, encoding: 'utf8', timeout: 900000 }); return { ok: r.status === 0, out: `${r.stdout || ''}${r.stderr || ''}` }; }
+let ENGINE = false; const hint = m => { if (!ENGINE) say(m); };
 function argsOf(argv) {
   const pos = [], opt = {};
   for (let i = 0; i < argv.length; i++) {
@@ -370,7 +371,7 @@ function cmdScout(ctx, id, opt) {
   const lessons = loadLessons(P).filter(l => !['scout', 'reviewer'].includes(l.scope)).slice(0, 80).map(l => `- ${l.id} · ${l.scope} · ${l.rule}`).join('\n');
   const prompt = `# Scout ${id} · ${t.title}\nYou are read-only. Write exactly one file: ${posix(path.join(reportDir(P, id), 'scout.md'))}\n\nRequest / goal:\n${t.body.trim()}\n\n## Repo files (git ls-files, first 400)\n${files.join('\n')}\n\n## Lessons available (pick those that apply to this ticket)\n${lessons || '(none)'}\n\n## Size rules\nS: one file, text/config/style, no new behavior · M: up to five files, one behavior, no schema/auth/payments/deletion · L: anything else\n\n## Output\nFrontmatter: size (S|M|L), files (list of repo paths the worker must touch or read), lessons (list of lesson ids), questions (0-3 outcome-level questions a non-engineer can answer, only if the answer changes the build).\nBody: what exists already, what is missing, risks. Under 40 lines.\n`;
   const pf = path.join(P.cache, `${id}.scout.md`); write(pf, prompt); setStatus(t, 'asking', 'scout dispatched');
-  say(`prompt: ${posix(path.relative(P.root, pf))}\nrun Agent(subagent_type: "orc:scout", model: "${cfg.models.scout}", prompt: <that file>) then  orc scout ${id} --record`);
+  hint(`prompt: ${posix(path.relative(P.root, pf))}\nrun Agent(subagent_type: "orc:scout", model: "${cfg.models.scout}", prompt: <that file>) then  orc scout ${id} --record`);
 }
 
 function cmdDispatch(ctx, id, opt) {
@@ -388,12 +389,12 @@ function cmdDispatch(ctx, id, opt) {
 1. Run the check first and note the baseline: ${cfg.check || '(no check command; add one small smoke check for this behavior)'}
 2. Build. Commit per acceptance criterion on ${branch}; message "${id}: ...". Add files by name, never \`git add -A\`.
 3. Proof, not claims: for every acceptance criterion paste the command you ran and its output into vault/Reports/${id}/work.md (inside the worktree) under "## Proof". A new check must be watched to fail before it passes.
-4. Need a secret, an account, or a decision only the user can make? Write it under "## Needs you" in work.md and stop. Never read or print secret values.
-5. Finish work.md with: ## What changed (plain words) · ## Proof · ## Needs you · ## Lesson candidates (\`\`\`lessons JSON list of {rule, scope, trigger, check, confidence}\`\`\`).
+4. Vague or missing spec details (empty criteria, unclear wording, a choice the spec leaves open): pick the sensible default, record it under "## Assumptions" in work.md and keep going. Write under "## Needs you" only what you cannot do yourself: a secret value, an account, a payment, a destructive or production action. Then stop. Never read or print secret values.
+5. Finish work.md with: ## What changed (plain words) · ## Assumptions · ## Proof · ## Needs you (or "none") · ## Lesson candidates (\`\`\`lessons JSON list of {rule, scope, trigger, check, confidence}\`\`\`).
 `;
   const pf = path.join(P.cache, `${id}.build.md`); write(pf, prompt);
   t.branch = branch; t.models = { ...(t.models || {}), worker: model }; t.base_sha = git(P.root, ['rev-parse', base]).out; setStatus(t, 'building', `round ${round} · worker ${model} · worktree ${posix(path.relative(P.root, wt))} · cap ${cfg.caps.turns.worker} turns · ${usd(cfg.caps.budget_usd[t.size] || 8)}`);
-  say(`prompt: ${posix(path.relative(P.root, pf))}\nrun Agent(subagent_type: "orc:worker", model: "${model}", prompt: <that file>) then  orc check ${id}`);
+  hint(`prompt: ${posix(path.relative(P.root, pf))}\nrun Agent(subagent_type: "orc:worker", model: "${model}", prompt: <that file>) then  orc check ${id}`);
 }
 function latestReport(P, id, re) { const d = reportDir(P, id); if (!exists(d)) return null; const fs_ = fs.readdirSync(d).filter(f => re.test(f)).sort((a, b) => (+a.match(/\d+/)?.[0] || 0) - (+b.match(/\d+/)?.[0] || 0)); return fs_.length ? path.join(d, fs_.pop()) : null; }
 function wtOf(ctx, t) { const s = loadState(ctx.P); const wt = s.tickets[t.id]?.worktree; return wt && exists(wt) ? wt : null; }
@@ -408,8 +409,8 @@ function cmdCheck(ctx, id) {
   write(path.join(reportDir(P, id), 'checks.md'), `# Checks · ${id} · ${status} · ${stamp()}\n\n\`\`\`\n${out.slice(-8000) || 'no check command configured'}\n\`\`\`\n`);
   t.checks = status; saveTicket(t); logEvent(t, 'checked', `${status}${cmds.length ? ` · ${cmds.length} command(s)` : ' · no check command'}`);
   say(`${id} checks: ${status}`);
-  if (status === 'fail') { const s = loadState(P); const r = s.tickets[id]?.round || 1; say(r < cfg.review.max_fix_rounds + 1 ? `re-run the worker:  orc dispatch ${id}` : `too many failed rounds → orc ticket set ${id} status=needs-you`); }
-  else say(reviewNeeded(cfg, t) ? `next:  orc review ${id}` : `next:  orc merge ${id}`);
+  if (status === 'fail') { const s = loadState(P); const r = s.tickets[id]?.round || 1; hint(r < cfg.review.max_fix_rounds + 1 ? `re-run the worker:  orc dispatch ${id}` : `too many failed rounds → orc ticket set ${id} status=needs-you`); }
+  else hint(reviewNeeded(cfg, t) ? `next:  orc review ${id}` : `next:  orc merge ${id}`);
 }
 const reviewNeeded = (cfg, t) => { const r = cfg.review[sizeOf(cfg, t)]; return Array.isArray(r) && r.length > 0; };
 
@@ -419,7 +420,7 @@ function cmdReview(ctx, id, opt) {
     const rf = latestReport(P, id, /^review-\d+\.md$/) || die('no review report yet'); const { fm } = readMd(rf);
     t.review_rounds = (t.review_rounds || 0) + 1;
     const cands = lessonsFromFile(rf); const ids = cands.map(c => addLesson(ctx, c, `${id} review`));
-    if (String(fm.verdict).toLowerCase() === 'pass') { setStatus(t, 'checking', `review ${t.review_rounds} pass${ids.length ? ` · lessons ${ids.join(', ')}` : ''}`); say(`${id} review passed · next:  orc merge ${id}`); }
+    if (String(fm.verdict).toLowerCase() === 'pass') { setStatus(t, 'checking', `review ${t.review_rounds} pass${ids.length ? ` · lessons ${ids.join(', ')}` : ''}`); say(`${id} review passed`); hint(`next:  orc merge ${id}`); }
     else if (t.review_rounds > cfg.review.max_fix_rounds) { setStatus(t, 'needs-you', `review ${t.review_rounds} still failing after ${cfg.review.max_fix_rounds} fix rounds · see ${posix(path.relative(P.root, rf))}`); say(`${id} → needs-you`); }
     else { setStatus(t, 'fixing', `review ${t.review_rounds} fail · ${fm.failing || ''}`); say(`${id} review failed · next:  orc dispatch ${id}  (fix round)`); }
     return;
@@ -447,7 +448,7 @@ commands you ran and their output
 \`\`\`
 `;
   const pf = path.join(P.cache, `${id}.review.md`); write(pf, prompt); t.models = { ...(t.models || {}), reviewer: cfg.models.reviewer }; setStatus(t, 'reviewing', `round ${n} · reviewer ${cfg.models.reviewer} · ${passes.join('+')}`);
-  say(`prompt: ${posix(path.relative(P.root, pf))}\nrun Agent(subagent_type: "orc:reviewer", model: "${cfg.models.reviewer}", prompt: <that file>) then  orc review ${id} --record`);
+  hint(`prompt: ${posix(path.relative(P.root, pf))}\nrun Agent(subagent_type: "orc:reviewer", model: "${cfg.models.reviewer}", prompt: <that file>) then  orc review ${id} --record`);
 }
 
 function cmdMerge(ctx, id) {
@@ -455,7 +456,13 @@ function cmdMerge(ctx, id) {
   const cur = git(P.root, ['rev-parse', '--abbrev-ref', 'HEAD']).out; if (cur !== base) die(`Main checkout is on ${cur}; switch to ${base} first.`);
   const rb = git(wt, ['rebase', base], { ok: true }); if (!rb.ok) { git(wt, ['rebase', '--abort'], { ok: true }); setStatus(t, 'needs-you', `rebase onto ${base} conflicts: ${rb.err.split('\n')[0]}`); die(`${id} → needs-you (rebase conflict)`); }
   if (cfg.check) { const r = sh(cfg.check, wt); if (!r.ok) { write(path.join(reportDir(P, id), 'checks.md'), `# Checks · ${id} · fail after rebase\n\n\`\`\`\n${r.out.slice(-8000)}\n\`\`\`\n`); t.checks = 'fail'; setStatus(t, 'fixing', 'check failed after rebase'); die(`${id} check failed after rebase · orc dispatch ${id}`); } }
-  const before = git(P.root, ['rev-parse', base]).out; const ff = git(P.root, ['merge', '--ff-only', t.branch], { ok: true }); if (!ff.ok) die(`fast-forward failed:\n${ff.err}`);
+  const before = git(P.root, ['rev-parse', base]).out; let ff = git(P.root, ['merge', '--ff-only', t.branch], { ok: true });
+  if (!ff.ok && /untracked working tree files would be overwritten/.test(ff.err)) {
+    const blockers = ff.err.split('\n').map(l => l.trim()).filter(l => l.startsWith('vault/Reports/') || l.startsWith('vault/Lessons/'));
+    for (const f of blockers) { try { fs.rmSync(path.join(P.root, f)); } catch {} }
+    if (blockers.length) ff = git(P.root, ['merge', '--ff-only', t.branch], { ok: true });
+  }
+  if (!ff.ok) die(`fast-forward failed:\n${ff.err}`);
   const after = git(P.root, ['rev-parse', 'HEAD']).out;
   git(P.root, ['worktree', 'remove', '--force', wt], { ok: true }); git(P.root, ['branch', '-d', t.branch], { ok: true });
   t.merge_base = before; t.merge_sha = after; t.merged = now(); setStatus(t, 'merged', `${after.slice(0, 7)} · worktree removed`);
@@ -479,7 +486,7 @@ function cmdDone(ctx, id) {
   const verdicts = rf ? [...read(rf).matchAll(/^- (AC\d+)\s*(✓|✗)/gm)] : []; const ok = verdicts.filter(v => v[2] === '✓').length;
   const tok = Object.entries(t.tokens || {}).map(([r, n]) => `${r} ${t.models?.[r] || ''} ${fmtK(n)}`).join(' · ');
   const learned = (exists(t.log) ? [...read(t.log).matchAll(/lessons? (L-\d+(?:, L-\d+)*)/g)].map(m => m[1]) : []).join(', ');
-  const W = 70; const line = (k, v) => `│ ${k.padEnd(14)} ${String(v).padEnd(W - 17)}│`;
+  const W = 70; const clip = (v, n) => { v = String(v); return v.length > n ? v.slice(0, n - 1) + '…' : v; }; const line = (k, v) => `│ ${k.padEnd(14)} ${clip(v, W - 17).padEnd(W - 17)}│`;
   say(`┌ ${id} ${t.status} ${'─'.repeat(Math.max(1, W - id.length - String(t.status).length - 3))}┐`);
   say(line('What changed', t.summary || '(set with: orc ticket set ' + id + ' summary="...")'));
   (t.try_it || []).forEach((s, i) => say(line(i ? '' : 'Try it', `${i + 1}. ${s}`)));
@@ -563,7 +570,7 @@ function cmdBoard(ctx, quiet) {
   write(path.join(P.vault, 'Dashboard.html'), dashboardHtml(data));
   if (!quiet) say(`vault/Board.md, Home.md, Decisions.md, Dashboard.html regenerated`);
 }
-function costByModel(ts, cfg) { const g = {}; for (const t of ts) for (const [role, u] of Object.entries(t.usage || {})) { const k = `${role} · ${family(u.model || t.models?.[role])}`; g[k] = g[k] || { tickets: 0, tokens: 0, cost: 0, rounds: 0 }; g[k].tickets++; g[k].tokens += (u.in || 0) + (u.out || 0); g[k].cost += costOf(cfg, u.model || t.models?.[role], u); g[k].rounds += +t.review_rounds || 0; } return Object.entries(g).map(([k, v]) => ({ k, ...v })); }
+function costByModel(ts, cfg) { const g = {}; for (const t of ts) for (const [role, u] of Object.entries(t.usage || {})) { const k = `${role} · ${family(u.model || t.models?.[role])}`; g[k] = g[k] || { tickets: 0, tokens: 0, cost: 0, rounds: 0 }; g[k].tickets++; g[k].tokens += (u.in || 0) + (u.out || 0); g[k].cost += typeof u.usd === 'number' ? u.usd : costOf(cfg, u.model || t.models?.[role], u); g[k].rounds += +t.review_rounds || 0; } return Object.entries(g).map(([k, v]) => ({ k, ...v })); }
 function dashboardHtml(d) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(d.project)} · orc</title>
 <style>:root{--bg:#fafaf9;--fg:#1c1917;--mut:#78716c;--card:#fff;--line:#e7e5e4;--acc:#2563eb;--warn:#b45309;--ok:#15803d;--bad:#b91c1c}@media(prefers-color-scheme:dark){:root{--bg:#0c0a09;--fg:#f5f5f4;--mut:#a8a29e;--card:#1c1917;--line:#292524;--acc:#60a5fa;--warn:#fbbf24;--ok:#4ade80;--bad:#f87171}}
@@ -600,11 +607,11 @@ function hook(event) {
 const out = o => say(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', ...o } }));
 function guard(ctx, input) {
   const { cfg, P } = ctx; const tool = input.tool_name; const ti = input.tool_input || {}; const cwd = input.cwd || P.root;
-  const isAgent = !!input.agent_id; const at = String(input.agent_type || '').toLowerCase();
+  const isAgent = !!input.agent_id || !!process.env.ORC_ROLE; const at = String(input.agent_type || process.env.ORC_ROLE || '').toLowerCase();
   const role = at.includes('scout') ? 'scout' : at.includes('worker') ? 'worker' : at.includes('reviewer') ? 'reviewer' : isAgent ? 'agent' : 'control';
   const interactive = !isAgent && !['bypassPermissions', 'dontAsk'].includes(input.permission_mode);
   const deny = r => out({ permissionDecision: 'deny', permissionDecisionReason: r });
-  const pause = (kind, r) => { if (interactive) return out({ permissionDecision: 'ask', permissionDecisionReason: `${kind}: ${r}` }); const s = loadState(P); if (s.active) { try { const t = loadTicket(P, s.active); if (t.status !== 'needs-you') setStatus(t, 'needs-you', `${kind} blocked: ${r.slice(0, 120)}`); } catch {} } return deny(`${kind} command blocked while running in the background. The ticket now needs the user: ${r}`); };
+  const pause = (kind, r) => { if (interactive) return out({ permissionDecision: 'ask', permissionDecisionReason: `${kind}: ${r}` }); const s = loadState(P); const aid = process.env.ORC_TICKET || s.active; if (aid) { try { const t = loadTicket(P, aid); if (t.status !== 'needs-you') setStatus(t, 'needs-you', `${kind} blocked: ${r.slice(0, 120)}`); } catch {} } return deny(`${kind} command blocked while running in the background. The ticket now needs the user: ${r}`); };
   if (['Read', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(tool)) {
     const fp = ti.file_path || ti.notebook_path || ti.path; if (!fp) return;
     const abs = path.resolve(cwd, fp); const rel = posix(path.relative(P.root, abs));
@@ -613,7 +620,7 @@ function guard(ctx, input) {
     if (tool === 'Read') return;
     if (isAgent && rel.startsWith('vault/Tickets/')) return deny('Ticket specs are written by control and orc only. Put findings in your report file.');
     if (rel.startsWith('.orc/state.json')) return deny('state.json is written by orc only.');
-    if (role === 'worker') { const wt = loadState(P).tickets[loadState(P).active]?.worktree; if (wt && !abs.startsWith(path.resolve(wt)) && !rel.startsWith('vault/Reports/')) return deny(`Workers write only inside their worktree: ${wt}`); }
+    if (role === 'worker') { const st = loadState(P); const wt = st.tickets[process.env.ORC_TICKET || st.active]?.worktree; if (wt && !abs.startsWith(path.resolve(wt)) && !rel.startsWith('vault/Reports/')) return deny(`Workers write only inside their worktree: ${wt}`); }
     if ((role === 'scout' || role === 'reviewer') && !rel.startsWith('vault/Reports/')) return deny(`${role} is read-only except vault/Reports/. Report, do not change.`);
     return;
   }
@@ -634,16 +641,98 @@ function account(ctx, input) {
   const u = { in: 0, out: 0, cache_read: 0, cache_write: 0, model: null, turns: 0 }; const tp = input.agent_transcript_path;
   if (tp && exists(tp)) for (const line of read(tp).split('\n')) { if (!line.trim()) continue; let j; try { j = JSON.parse(line); } catch { continue; } const m = j.message || j; const us = m.usage || j.usage; if (!us || (m.role && m.role !== 'assistant')) continue; u.in += us.input_tokens || 0; u.out += us.output_tokens || 0; u.cache_read += us.cache_read_input_tokens || 0; u.cache_write += us.cache_creation_input_tokens || 0; u.turns++; if (m.model) u.model = m.model; }
   if (!u.turns) { logEvent(t, 'cost', `${role}: no usage found in transcript (${tp ? 'format changed?' : 'no transcript path'})`); return; }
-  u.model = u.model || t.models?.[role] || cfg.models[role] || 'sonnet'; const prev = t.usage?.[role] || {};
-  const merged = { model: u.model, in: (prev.in || 0) + u.in, out: (prev.out || 0) + u.out, cache_read: (prev.cache_read || 0) + u.cache_read, cache_write: (prev.cache_write || 0) + u.cache_write, turns: (prev.turns || 0) + u.turns };
+  recordUsage(ctx, t, role, u, null);
+}
+function recordUsage(ctx, t, role, u, reported) {
+  const { cfg } = ctx; u.model = u.model || t.models?.[role] || cfg.models[role] || 'sonnet'; const prev = t.usage?.[role] || {};
+  const usd_ = typeof reported === 'number' ? reported : costOf(cfg, u.model, u);
+  const merged = { model: u.model, in: (prev.in || 0) + u.in, out: (prev.out || 0) + u.out, cache_read: (prev.cache_read || 0) + u.cache_read, cache_write: (prev.cache_write || 0) + u.cache_write, turns: (prev.turns || 0) + u.turns, usd: +((prev.usd || 0) + usd_).toFixed(4) };
   t.usage = { ...(t.usage || {}), [role]: merged }; t.tokens = Object.fromEntries(Object.entries(t.usage).map(([r, x]) => [r, (x.in || 0) + (x.out || 0)]));
-  t.cost_usd = +Object.values(t.usage).reduce((a, x) => a + costOf(cfg, x.model, x), 0).toFixed(4); t.models = { ...(t.models || {}), [role]: family(u.model) };
-  saveTicket(t); logEvent(t, 'cost', `${role} ${family(u.model)} ${fmtK(u.in + u.out)} tokens · ${u.turns} turns · ticket total ${usd(t.cost_usd)}`);
+  t.cost_usd = +Object.values(t.usage).reduce((a, x) => a + (typeof x.usd === 'number' ? x.usd : costOf(cfg, x.model, x)), 0).toFixed(4); t.models = { ...(t.models || {}), [role]: family(u.model) };
+  saveTicket(t); logEvent(t, 'cost', `${role} ${family(u.model)} ${fmtK(u.in + u.out)} tokens · ${u.turns} turns · ${usd(usd_)} · ticket total ${usd(t.cost_usd)}`);
+}
+
+/* ------------------------------ engine ---------------------------------- */
+// orc run: the loop in code. Each agent is a headless `claude -p` process with the model, turn cap, budget, tools
+// and guard set here. The agent's only job is the work; orc owns state, git, checks, review routing and merge.
+const CLAUDE_BIN = process.env.ORC_CLAUDE_BIN || 'claude';
+function runAgent(ctx, t, role, promptFile, o = {}) {
+  const { P, cfg } = ctx; const model = o.model || (role === 'worker' ? workerModel(cfg, t) : cfg.models[role]); const cwd = o.cwd || P.root;
+  const turns = cfg.caps.turns[role] || 30; const budget = cfg.caps.budget_usd[sizeOf(cfg, t)] || 8;
+  const tools = role === 'worker' ? ['Read', 'Edit', 'Write', 'MultiEdit', 'Glob', 'Grep', 'Bash'] : ['Read', 'Glob', 'Grep', 'Bash', 'Write'];
+  const skill = path.join(PLUGIN_ROOT, 'skills', { worker: 'orc-build', scout: 'orc-scout', reviewer: 'orc-review' }[role], 'SKILL.md');
+  const settingsFile = path.join(P.cache, 'agent-settings.json');
+  write(settingsFile, JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Read|Edit|Write|MultiEdit|NotebookEdit|Bash', hooks: [{ type: 'command', command: `node "${path.join(PLUGIN_ROOT, 'bin', 'orc.mjs')}" hook guard` }] }] } }, null, 1));
+  const args = ['-p', '--model', model, '--output-format', 'json', '--max-turns', String(turns), '--max-budget-usd', String(budget),
+    '--allowedTools', ...tools, '--disallowedTools', 'Agent', 'WebSearch', 'WebFetch', '--settings', settingsFile, '--append-system-prompt-file', skill, ...(o.extra || [])];
+  const env = { ...process.env, ORC_ROLE: role, ORC_TICKET: t.id }; delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT;
+  const n = loadState(P).tickets[t.id]?.round || 1; const t0 = Date.now();
+  say(`  ${role.padEnd(8)} ${model} · up to ${turns} turns / ${usd(budget)} · ${role === 'worker' ? posix(path.relative(P.root, cwd)) : 'repo'}`);
+  const r = spawnSync(CLAUDE_BIN, args, { cwd, env, input: read(promptFile), encoding: 'utf8', maxBuffer: 64e6, timeout: (cfg.caps.agent_minutes || 45) * 60000, windowsHide: true });
+  const raw = (r.stdout || '').trim(); let j = null; try { j = JSON.parse(raw.slice(raw.indexOf('{'))); } catch {}
+  write(path.join(P.cache, `${t.id}.${role}-${n}.json`), raw || (r.stderr || '') || String(r.error || ''));
+  const mins = ((Date.now() - t0) / 60000).toFixed(1);
+  if (!j) { logEvent(t, 'agent', `${role} produced no result (${r.error?.code || r.status || 'exit'}) after ${mins} min`); return { ok: false, why: (r.stderr || r.error?.message || 'no output').slice(0, 300) }; }
+  const us = j.usage || {}; const mu = j.modelUsage ? Object.keys(j.modelUsage)[0] : null;
+  recordUsage(ctx, loadTicket(P, t.id), role, { in: us.input_tokens || 0, out: us.output_tokens || 0, cache_read: us.cache_read_input_tokens || 0, cache_write: us.cache_creation_input_tokens || 0, model: mu || model, turns: j.num_turns || 1 }, typeof j.total_cost_usd === 'number' ? j.total_cost_usd : null);
+  const s = loadState(P); s.tickets[t.id] = { ...(s.tickets[t.id] || {}), sessions: { ...(s.tickets[t.id]?.sessions || {}), [`${role}-${n}`]: j.session_id } }; saveState(P, s);
+  const denied = (j.permission_denials || []).length; const t2 = loadTicket(P, t.id);
+  say(`  ${''.padEnd(8)} done in ${mins} min · ${j.num_turns || '?'} turns · ${usd(j.total_cost_usd)}${denied ? ` · ${denied} blocked call(s)` : ''} · ${j.terminal_reason || j.stop_reason || ''}`);
+  if (t2.status === 'needs-you') return { ok: false, why: lastLog(t2).replace(/^\S+ \S+\s+\S+\s+/, '') };
+  return { ok: !j.is_error, why: j.is_error ? String(j.result || '').slice(0, 300) : '', j };
+}
+function needsYouIn(file) { if (!exists(file)) return ''; const m = read(file).match(/^## Needs you\s*\n([\s\S]*?)(?=^## |\s*$)/m); const body = (m?.[1] || '').trim(); return /^(-?\s*)?(none|nothing|n\/a|no)?\.?$/i.test(body) ? '' : body.slice(0, 400); }
+function firstLineOf(file, heading) { if (!exists(file)) return ''; const m = read(file).match(new RegExp(`^## ${heading}\\s*\\n([\\s\\S]*?)(?=^## |\\s*$)`, 'm')); return (m?.[1] || '').split('\n').map(l => l.replace(/^[-*\d.)\s]+/, '').trim()).filter(Boolean)[0] || ''; }
+function stop(t, why) { say(`\n${t.id} needs you: ${why}\nresume with: orc resume ${t.id} && orc run ${t.id}`); process.exit(2); }
+function cmdRun(ctx, pos, opt) {
+  const { P, cfg } = ctx; ENGINE = true; let id = pos[0];
+  if (!id) die('orc run T-001  ·  or  orc run "what you want built"');
+  if (!/^T-\d+$/i.test(id)) {
+    cmdNew(ctx, [pos.join(' ')], opt); id = loadState(P).active; const n = loadTicket(P, id);
+    n.body = `## Goal\n${pos.join(' ')}\n\n## Acceptance criteria\n- AC1 The goal above works end to end. The worker states the concrete criteria it chose under "## Assumptions" in work.md.\n\n## Out of scope\nAnything the goal does not mention.\n\n## How to verify\n- ${cfg.check || 'run the smoke check the worker adds'}\n`;
+    n.decisions = [{ q: 'questions', a: 'skipped: started from a terminal with default answers', default_used: true }]; saveTicket(n);
+  }
+  id = id.toUpperCase(); let t = loadTicket(P, id);
+  if (['merged', 'closed', 'failed', 'undone'].includes(t.status)) die(`${id} is already ${t.status}`);
+  if (t.status === 'needs-you') die(`${id} needs you: ${lastLog(t).replace(/^\S+ \S+\s+\S+\s+/, '')}\nrun  orc resume ${id}  when that is handled`);
+  const over = () => { t = loadTicket(P, id); const cap = cfg.caps.budget_usd[sizeOf(cfg, t)] || 8; return t.cost_usd > cap ? `ticket cost ${usd(t.cost_usd)} is over the ${sizeOf(cfg, t)} budget of ${usd(cap)}` : ''; };
+  say(`▶ ${id} ${t.title}`);
+  const scoutReport = path.join(reportDir(P, id), 'scout.md');
+  if (!exists(scoutReport) && !opt['no-scout']) {
+    cmdScout(ctx, id, {}); const r = runAgent(ctx, t, 'scout', path.join(P.cache, `${id}.scout.md`));
+    if (!r.ok) stop(t, `scout failed: ${r.why}`); if (!exists(scoutReport)) stop(t, 'scout wrote no report'); cmdScout(ctx, id, { record: true });
+    if (opt['scout-only']) return;
+  }
+  if (opt['scout-only']) { say(`${id} already scouted`); return; }
+  const reviewed = t.status === 'checking' && t.checks === 'pass';
+  for (let round = 1; !reviewed && round <= cfg.review.max_fix_rounds + 1; round++) {
+    cmdDispatch(ctx, id, { model: opt.model }); t = loadTicket(P, id); const wt = wtOf(ctx, t);
+    const r = runAgent(ctx, t, 'worker', path.join(P.cache, `${id}.build.md`), { cwd: wt });
+    const work = path.join(wt, 'vault', 'Reports', id, 'work.md'); if (exists(work)) write(path.join(P.cache, `${id}.work.md`), read(work));
+    if (!r.ok) stop(t, `worker stopped: ${r.why}`);
+    const ny = needsYouIn(work); if (ny) { setStatus(loadTicket(P, id), 'needs-you', ny.split('\n')[0].slice(0, 160)); stop(t, ny); }
+    const ov = over(); if (ov) { setStatus(t, 'needs-you', ov); stop(t, ov); }
+    cmdCheck(ctx, id); t = loadTicket(P, id);
+    if (t.checks === 'fail') { if (round > cfg.review.max_fix_rounds) { setStatus(t, 'needs-you', `checks still failing after ${round} rounds`); stop(t, 'checks keep failing; see vault/Reports/' + id + '/checks.md'); } continue; }
+    if (!reviewNeeded(cfg, t)) break;
+    cmdReview(ctx, id, {}); const rv = runAgent(ctx, t, 'reviewer', path.join(P.cache, `${id}.review.md`));
+    if (!rv.ok) stop(t, `reviewer stopped: ${rv.why}`); if (!latestReport(P, id, /^review-\d+\.md$/)) stop(t, 'reviewer wrote no report');
+    cmdReview(ctx, id, { record: true }); t = loadTicket(P, id);
+    if (t.status === 'checking') break; if (t.status === 'needs-you') stop(t, lastLog(t).replace(/^\S+ \S+\s+\S+\s+/, ''));
+    const ov2 = over(); if (ov2) { setStatus(t, 'needs-you', ov2); stop(t, ov2); }
+  }
+  cmdMerge(ctx, id); t = loadTicket(P, id);
+  const wk = path.join(reportDir(P, id), 'work.md'); const wc = path.join(P.cache, `${id}.work.md`); if (!exists(wk) && exists(wc)) write(wk, read(wc));
+  if (exists(wk)) { const ids = lessonsFromFile(wk).map(c => addLesson(ctx, c, `${id} work`)); if (ids.length) logEvent(t, 'lessons', ids.join(', ')); }
+  if (!t.summary) t.summary = firstLineOf(wk, 'What changed').slice(0, 120);
+  if (!(t.try_it || []).length) t.try_it = (t.body.match(/^## How to verify\s*\n([\s\S]*?)(?=^## |\s*$)/m)?.[1] || '').split('\n').map(l => l.replace(/^[-*\d.)\s]+/, '').trim()).filter(Boolean).slice(0, 3);
+  saveTicket(t); cmdBoard(ctx, true); say(''); cmdDone(ctx, id);
 }
 
 /* ------------------------------ main ------------------------------------ */
 const { pos, opt } = argsOf(process.argv.slice(2)); const [cmd, ...rest] = pos;
-if (!cmd || cmd === 'help' || opt.help) { say(`orc ${VERSION} · gate-free development orchestrator for Claude Code\n\nsetup     orc init [--store vault|postgres] · orc doctor · orc explain [topic]\ntickets   orc new "<title>" [--size S|M|L] [--type feature|fix|chore] · orc ticket list|show|set|log · orc ready · orc needs-you\nrun       orc scout T-001 [--record] · orc dispatch T-001 [--model m] · orc check T-001 · orc review T-001 [--record] · orc merge T-001 · orc undo T-001 · orc resume T-001 · orc close T-001 [--failed]\nsee       orc status · orc board · orc done T-001 · orc cost [T-001|--week] · orc models suggest\nlearn     orc lessons list|add|reject|tier|skill\nstore     orc store status|migrate|postgres\n\n/orc <request> inside Claude Code drives all of this for you.`); process.exit(0); }
+if (!cmd || cmd === 'help' || opt.help) { say(`orc ${VERSION} · gate-free development orchestrator for Claude Code\n\nsetup     orc init [--store vault|postgres] · orc doctor · orc explain [topic]\ntickets   orc new "<title>" [--size S|M|L] [--type feature|fix|chore] · orc ticket list|show|set|log · orc ready · orc needs-you\nrun       orc run T-001 | orc run "<request>"  (the engine: scout → build → check → review → merge)
+steps     orc scout T-001 [--run|--record] · orc dispatch T-001 [--model m] · orc check T-001 · orc review T-001 [--record] · orc merge T-001 · orc undo T-001 · orc resume T-001 · orc close T-001 [--failed]\nsee       orc status · orc board · orc done T-001 · orc cost [T-001|--week] · orc models suggest\nlearn     orc lessons list|add|reject|tier|skill\nstore     orc store status|migrate|postgres\n\n/orc <request> inside Claude Code drives all of this for you.`); process.exit(0); }
 if (cmd === 'hook') { hook(rest[0]); process.exit(0); }
 if (cmd === 'init') { cmdInit(opt); process.exit(0); }
 if (cmd === 'explain') { cmdExplain(rest); process.exit(0); }
@@ -651,7 +740,7 @@ if (cmd === 'version') { say(VERSION); process.exit(0); }
 if (cmd === 'doctor') { cmdDoctor(project()); process.exit(0); }
 const ctx = need();
 ({ new: () => cmdNew(ctx, rest, opt), ticket: () => cmdTicket(ctx, rest), ready: () => cmdReady(ctx), 'needs-you': () => cmdNeedsYou(ctx), status: () => say(statusLines(ctx).join('\n')),
-  scout: () => cmdScout(ctx, rest[0] || die('ticket id?'), opt), dispatch: () => cmdDispatch(ctx, rest[0] || die('ticket id?'), opt), check: () => cmdCheck(ctx, rest[0] || die('ticket id?')), review: () => cmdReview(ctx, rest[0] || die('ticket id?'), opt),
+  run: () => cmdRun(ctx, rest, opt), scout: () => opt.run ? cmdRun(ctx, [rest[0] || die('ticket id?')], { 'scout-only': true }) : cmdScout(ctx, rest[0] || die('ticket id?'), opt), dispatch: () => cmdDispatch(ctx, rest[0] || die('ticket id?'), opt), check: () => cmdCheck(ctx, rest[0] || die('ticket id?')), review: () => cmdReview(ctx, rest[0] || die('ticket id?'), opt),
   merge: () => cmdMerge(ctx, rest[0] || die('ticket id?')), undo: () => cmdUndo(ctx, rest[0] || die('ticket id?')), resume: () => cmdResume(ctx, rest[0] || die('ticket id?')), close: () => cmdClose(ctx, rest[0] || die('ticket id?'), opt), done: () => cmdDone(ctx, rest[0] || die('ticket id?')),
   board: () => cmdBoard(ctx, false), dashboard: () => { cmdBoard(ctx, false); if (opt.open) spawnSync(process.platform === 'win32' ? 'cmd' : 'open', process.platform === 'win32' ? ['/c', 'start', '', path.join(ctx.P.vault, 'Dashboard.html')] : [path.join(ctx.P.vault, 'Dashboard.html')]); },
   lessons: () => cmdLessons(ctx, rest, opt), lesson: () => cmdLessons(ctx, rest, opt), cost: () => cmdCost(ctx, rest, opt), models: () => cmdModels(ctx), store: () => cmdStore(ctx, rest),

@@ -6,7 +6,7 @@ postgres:
   url_env: ORC_DATABASE_URL   # the CLI reads this variable; agents never do
 check: {{check}}              # must pass before merge · null = each ticket adds a smoke check
 base_branch: {{base}}
-engine: subagent              # subagent | headless
+engine: headless              # headless = orc run spawns claude -p per agent · subagent = Agent tool inside your session
 
 models:                       # aliases resolve to the current generation
   control: inherit

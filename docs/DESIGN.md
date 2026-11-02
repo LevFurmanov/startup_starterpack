@@ -230,7 +230,7 @@ The question step is the one place the user is involved, so it has its own short
 | SessionStart | inject a five-line status from `state.json` so control resumes without reading anything else |
 | UserPromptSubmit | if a ticket is in `needs-you` or `asking`, remind control once |
 
-Dispatch engine is decided on day one by a spike: subagents through the Agent tool with native worktree isolation, or headless `claude -p` runs launched by the CLI, which return usage and cost in JSON and enforce a budget flag. The headless route gives cleaner accounting and true background work. The spike checks that a nested headless run works inside a Claude Code session on Windows and macOS. Whichever loses remains available behind `engine:` in `orc.yaml`.
+Dispatch engine, decided 2026-11-02: headless `claude -p` runs launched by `orc run` are the default (spike passed on Windows inside a nested session; usage and cost come back in JSON, `--max-budget-usd` and `--max-turns` enforce the caps, the guard is injected with `--settings`). The subagent route stays available behind `engine: subagent`. Original framing: subagents through the Agent tool with native worktree isolation, or headless `claude -p` runs launched by the CLI, which return usage and cost in JSON and enforce a budget flag. The headless route gives cleaner accounting and true background work. The spike checks that a nested headless run works inside a Claude Code session on Windows and macOS. Whichever loses remains available behind `engine:` in `orc.yaml`.
 
 ## 15. Levels
 

@@ -20,4 +20,6 @@ Then, in your project, describe a change:
 /orc add a login page
 ```
 
+The conversation happens in your session. The build itself is code: `orc run T-###` spawns the scout, worker and reviewer as headless Claude processes with the model, budget and security guard set by orc, then checks, reviews, merges and files lessons. From a terminal, `orc run "add a login page"` does the same with default answers.
+
 `orc explain` prints how every part works.
