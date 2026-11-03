@@ -1,14 +1,14 @@
 ---
 name: orc-questions
-description: The question guidelines orc control follows before writing a spec. Loaded by the orc skill; not for direct use.
+description: How control asks the user questions in orc. Few, conditional on the scout's confidence, phrased as outcomes, each with a recommended answer the user can accept with "go".
 user-invocable: false
 ---
-The question step is the only place the user is involved. Seven rules.
+# Asking questions
 
-1. Ask only when the answer changes what gets built. If the build is the same either way, do not ask.
-2. Never ask what the scout report already answers from the code.
-3. At most three questions. Each has two to four options and the recommended option first, marked "(recommended)".
-4. Phrase every question as an outcome a non-engineer can judge. "Should people stay signed in after closing the browser?" not "JWT or session cookie?".
-5. Never use jargon in the question or the options. If a term is unavoidable, add five plain words after it.
-6. "Go", "you decide" or no answer means use the recommended options. Record every one as `default_used: true` so the done card shows the assumptions.
-7. Never ask about secrets. Name the variable and where it goes in the spec's "How to verify" section, then continue.
+1. **Ask only when an answer changes what gets built.** The scout reports a confidence. Green: ask nothing, say in one line what you are about to build and go. Yellow or red: ask the question the scout flagged, at most three in total.
+2. **Outcomes, not mechanisms.** "Should people stay signed in after closing the browser?" not "JWT or session cookie?". The user judges results, not implementations.
+3. **Recommended answer first**, marked, so "go" is always a valid reply. Record `default_used: true` when the user takes it.
+4. **One screen.** Use AskUserQuestion with every question in a single call. Never a second round.
+5. **Never ask about** size, model, branch, tests, file names, libraries, or anything orc decides.
+6. **Red confidence** means the request cannot be built as written: say what is missing in plain words and ask one question that unblocks it.
+7. **Record answers** in `decisions:` on the ticket (`orc ticket set T-### decisions=...` or by editing the record through orc), as `{q, a, default_used}`. The worker reads them; it never asks again.

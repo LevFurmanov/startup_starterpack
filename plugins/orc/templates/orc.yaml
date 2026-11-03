@@ -1,45 +1,53 @@
 # orc configuration · edit freely · `orc explain` describes every section
 project: "{{name}}"
 level: 0                      # 0 = one ticket at a time · 1 = parallel tickets, roles
-store: {{store}}              # vault | postgres (orc store postgres)
+store: {{store}}              # vault | postgres (orc store postgres) · ticket records live in .orc/tickets either way
 postgres:
   url_env: ORC_DATABASE_URL   # the CLI reads this variable; agents never do
-check: {{check}}              # must pass before merge · null = each ticket adds a smoke check
+check: {{check}}              # orc runs it itself and keeps receipts · null = each ticket adds a smoke check
 base_branch: {{base}}
 engine: headless              # headless = orc run spawns claude -p per agent · subagent = Agent tool inside your session
+merge: auto                   # auto = fast-forward after checks and review pass; undo with orc undo
 
 models:                       # aliases resolve to the current generation
   control: inherit
   scout: haiku
   worker: { S: sonnet, M: sonnet, L: opus, chore: haiku }
-  reviewer: opus
+  reviewer: { S: worker, M: worker, L: opus, chore: worker }   # worker = same model as the worker, fresh process
+  reviewer_effort: high       # fresh eyes plus more reasoning is what the evidence rewards, not a bigger model
 
 review:
   S: none
   M: [bug]
-  L: [bug, proof, simplify]
-  max_fix_rounds: 2
+  L: [bug, proof, simplify]   # each pass is its own judge; simplify never blocks
+  max_fix_rounds: 2           # then needs-you
+  min_confidence: 0.7         # findings below this are shown but do not cause a fix round
 
 caps:
-  turns: { scout: 15, worker: 40, reviewer: 20 }
-  budget_usd: { S: 2, M: 8, L: 25 }
-  stall_minutes: 10
+  turns: { scout: 15, worker: { S: 25, M: 25, L: 40, chore: 15 }, reviewer: 20 }
+  minutes: { S: 10, M: 20, L: 40, chore: 10 }   # worker gets 2x as wall-clock cap
+  budget_usd: { S: 2, M: 8, L: 25, chore: 1 }   # backstop, not the primary stop
+  max_hours: 2                # scout splits anything it estimates above this into dependent tickets
+  stall: { warn: 3, stop: 6 } # identical tool calls in a row
 
-# a title or scout file list containing one of these words forces size L
 forced_L: [auth, login, password, payment, billing, stripe, delete, migration, secret, token]
 
-pricing:                      # USD per million tokens · list prices 2026-10
-  fable:  { in: 10, out: 50, cache_read: 1 }
-  opus:   { in: 4, out: 20, cache_read: 0.2 }
-  sonnet: { in: 2, out: 10, cache_read: 0.2 }
+pricing:                      # $ per million tokens, used only when the engine gets no cost from the model
+  fable:  { in: 10,  out: 50, cache_read: 1 }
+  opus:   { in: 4,   out: 20, cache_read: 0.2 }
+  sonnet: { in: 2,   out: 10, cache_read: 0.2 }
   haiku:  { in: 0.1, out: 0.5, cache_read: 0.01 }
 
 lessons:
-  guide_cap_lines: 30
-  promote_to_guide_at: 2      # seen twice → .claude/rules/
-  promote_to_enforce_at: 3    # seen three times with a check → run by orc check
+  guide_cap_lines: 30         # per rules file
+  per_ticket: 20              # rules loaded into one worker prompt
+  promote_to_guide_at: 2      # triggers
+  promote_to_enforce_at: 3    # triggers, and the lesson must carry a check command
+  expire_days: 60             # untriggered this long → kept, but not loaded into prompts
 
-security:                     # the only three reasons orc ever stops
+security:                     # the only reasons orc ever pauses
   secrets: ["**/.env*", "**/*secret*", "**/*credential*", "**/*.pem", "**/*.key", "**/id_rsa*"]
   destructive: ["git push --force*", "git push -f*", "git reset --hard*", "git branch -D*", "git clean -fd*", "rm -rf *", "DROP TABLE*", "*migrate reset*", "TRUNCATE *"]
   production: ["vercel --prod*", "npm publish*", "ssh *", "kubectl apply*", "docker push*", "fly deploy*", "git push * production*"]
+  tests: ["**/*.test.*", "**/*.spec.*", "**/*_test.*", "**/test_*.py", "tests/**", "test/**", "**/__tests__/**", "spec/**", "smoke.*", "**/smoke.*", "**/conftest.py", "**/fixtures/**"]   # existing ones are read-only for the worker
+  check_files: ["package.json", "pyproject.toml", "pytest.ini", "setup.cfg", "tox.ini", "Makefile", "*.config.*", "jest.config.*", "vitest.config.*", ".github/workflows/**", "orc.yaml", ".claude/**"]   # changes here go to the reviewer

@@ -5,17 +5,6 @@ status: queued
 size: {{size}}
 type: {{type}}
 created: {{created}}
-merged: null
-depends_on: []
-branch: null
-decisions: []
-models: {}
-tokens: {}
-cost_usd: 0
-review_rounds: 0
-checks: none
-summary: ""
-try_it: []
 ---
 ## Goal
 {{title}}
@@ -23,6 +12,12 @@ try_it: []
 ## Acceptance criteria
 - AC1 
 
+## Must not
+- Leave TODOs, placeholders or commented-out code
+- Add a dependency the spec does not name
+- Change files outside the scout's list without saying so under "## Assumptions"
+
 ## Out of scope
 
 ## How to verify
+- $ 

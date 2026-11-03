@@ -1,19 +1,24 @@
 ---
 name: orc-build
-description: How the orc worker builds one ticket in its worktree with proof for every acceptance criterion. Preloaded by the worker agent.
+description: Discipline for an orc worker building one ticket in its own worktree. Fresh context, spec first, receipts not claims, existing tests read-only, stop and report rather than work around.
 user-invocable: false
 ---
-Order of work: read the spec; run the check command and note the baseline; read only the files the scout named plus what they import; build; run the check again; write the report.
+# Building for orc
 
-Rules that are not negotiable:
-- Never run commands outside the worktree directory in your prompt. Never touch the base branch.
-- Never `git add -A` or `git add .`; add files by name. One commit per acceptance criterion, message `T-###: what`.
-- Never claim a criterion is done without the command you ran and its output pasted under "## Proof" in `vault/Reports/T-###/work.md` inside the worktree.
-- A new check must be watched to fail before it passes: write the check, run it red, make it green, paste both runs.
-- Never edit the ticket spec. If a criterion is impossible or wrong, say so under "## Needs you" and stop.
-- Never read, print or store a secret value. If one is needed, write the variable name and where it goes under "## Needs you" and stop.
-- Never change a test to match broken code. Fix the code.
-- Prefix every scratch file with the ticket id. Delete it before you finish.
-- When the project has no check command, add one small smoke check for the behavior you built and wire it so `orc check` can run it.
+You build exactly one ticket in the worktree named in your prompt, on its branch. orc merges; you never touch the base branch, the ticket files, orc's configuration or state.
 
-The report `work.md` has four sections: What changed (plain words, three lines), Proof, Needs you (or "none"), Lesson candidates as a ```lessons JSON block: `[{"rule": "Never ...", "scope": "src/x/**", "trigger": "what happened", "check": "optional command", "confidence": 0.7}]`. Lessons are negative constraints about this repo or about building, never praise.
+**Start.** Read the handoff from the previous round if there is one. Run the check command once before touching code and note the baseline. Then read only the files the scout listed and what they import.
+
+**Build to the criteria.** Every acceptance criterion gets code and a check that exercises it. Commit per criterion with the ticket id in the message; add files by name, never `git add -A`. Respect the spec's "Must not" block.
+
+**Tests ratchet upward.** Existing tests and fixtures are read-only for you; a hook enforces it. New behavior gets a new test file, wired into the check command. Watch a new test fail before it passes, then say so in the proof. If an existing test is wrong, do not work around it: report it under "## Needs you" and stop.
+
+**Receipts, not claims.** orc re-runs the check command and every verification step itself after you finish and keeps receipts. Your "## Proof" section quotes the commands you ran and their output so the reviewer can compare. A claim without output is treated as false.
+
+**Assumptions, not questions.** When the spec is vague, choose the sensible default, write it under "## Assumptions" and keep going. The user is not in the loop while you work.
+
+**Stopping is a valid success.** Stop, with the branch committed and clean, when: the spec, an existing test or the environment is wrong; you need a secret value, an account, a payment, a destructive or production action; or you have made the same attempt three times. Write why under "## Needs you". Never read, print or store a secret value; name the variable and where it goes.
+
+**Turns are finite.** You have the cap named in your prompt. Running out is not failure if work.md says where things stand; orc writes a handoff and may re-dispatch you fresh.
+
+**Finish mergeable.** Everything committed, the check passing, and `vault/Reports/<ticket>/work.md` inside the worktree with: `## What changed` (plain words, first line is the summary the user sees) · `## Assumptions` · `## Proof` · `## Needs you` (or "none") · `## Lesson candidates` as a ```lessons JSON list of `{rule, scope, trigger, check, confidence}`, each rule one sentence starting with Never, Always, Do not, Only, Avoid or Prefer.

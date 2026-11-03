@@ -22,4 +22,6 @@ Then, in your project, describe a change:
 
 The conversation happens in your session. The build itself is code: `orc run T-###` spawns the scout, worker and reviewer as headless Claude processes with the model, budget and security guard set by orc, then checks, reviews, merges and files lessons. From a terminal, `orc run "add a login page"` does the same with default answers.
 
-`orc explain` prints how every part works.
+What makes it strong, from the research in `docs/research/05-orchestration-practices.md`: orc runs every check itself and keeps receipts, reverts the change to prove new tests fail without it, keeps existing tests read-only for the worker, reviews with fresh-context judges that are told what cheating looks like, stops loops at six identical calls, hands each round to a fresh process with a ledger, and validates every lesson before it can shape a prompt.
+
+`orc explain` prints how every part works; `orc explain proof` is the short version of the above.

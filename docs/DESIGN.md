@@ -263,3 +263,29 @@ Taken here so the build can start. Each can be reversed in `orc.yaml` or a later
 - The dashboard is a static file, not a server.
 
 Still open and parked by request: product name, license, first-user persona.
+
+
+## 18. Decisions from the orchestration research (2026-11-03)
+
+Source: `docs/research/05-orchestration-practices.md` (five note files under `docs/research/notes/orchestration-practices/`). The loop shape survived the comparison unchanged; what changed is what orc trusts.
+
+Adopted and built:
+
+1. Orchestrator-run proof. `orc check` runs the check command and every `$ ` line of the spec itself and keeps receipts keyed by commit; a revert check proves new tests fail without the production change. The reviewer audits receipts, it does not generate them.
+2. Test ratchet by hook. Tests and fixtures that existed before the ticket are read-only for the worker; exceptions are logged through `orc ticket allow-tests`.
+3. Abort-and-report. The worker is told that stopping on a flawed spec, test or environment counts as success.
+4. Stall detector in the guard (3 warn, 6 stop) and a wall-clock cap of twice the size's minutes.
+5. Handoff ledger per round; every round is a fresh process, never a resumed session.
+6. JSON records and an append-only event log in `.orc/tickets` are the truth in both store modes; the vault holds the words.
+7. Review as isolated judges, one lens each, findings with confidence, an unknown escape, simplify never blocks.
+8. Skeptical calibration with named hack shapes, the test diff and the check-config diff as inputs.
+9. Reviewer model defaults to the worker's model at high effort for M, Opus for L; `orc models suggest` reports per reviewer model.
+10. Spec carries a Must-not block; verification steps are commands orc runs.
+11. Done card shows the hard signals: receipts, revert check, diff stat, findings.
+12. Lesson hygiene: shape validation, provenance, model stamp, expiry, 20 rules per prompt, no failure narratives.
+13. Conditional questions on scout confidence; worker startup protocol; scout estimates hours and splits above two.
+14. Caps: 25 worker turns for S and M, 40 for L; a cap hit writes the handoff and re-dispatches once.
+
+Decided by Lev against the report's suggestion: auto-merge stays for every size and domain (the report proposed a try-it sign-off for auth, payments, deletion and migrations). Undo remains the safety net.
+
+Deliberately not adopted, with the report's reasons: agent teams inside a ticket, in-session compaction, uncapped critic loops, a universal diff gate, a different-vendor reviewer, a third escalation tier, implementation-derived hidden tests, model-judged security gates, repository overviews in rules, dollar caps as the primary stop, shared locks or an integrator, a semantic index for the scout.

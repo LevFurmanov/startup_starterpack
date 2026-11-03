@@ -249,7 +249,10 @@ $ orc explain models
                                      are short
   scout       haiku         low      read-only, lists files, about 20k tokens
   worker      sonnet        medium   builds · opus when size L or escalated
-  reviewer    opus          high     fresh context, independent, findings only
+  reviewer    = worker      high     fresh process, no shared context, one
+                                     lens per judge · opus only on size L.
+                                     no evidence says a bigger reviewer finds
+                                     more; fresh eyes and reasoning do
   fixer       = worker      medium   same model as the build round
   scripts     none          -        board, cost, state, dashboard, dedupe
 
@@ -259,7 +262,7 @@ $ orc explain models
   ────── ──────────────────────────────────────────── ──────── ───────────────
   S      ≤1 file · text, config, style · no new       sonnet   none · checks
          behavior                                               only
-  M      ≤5 files · one behavior · no schema, auth,   sonnet   opus · bug pass
+  M      ≤5 files · one behavior · no schema, auth,   sonnet   sonnet · bug judge
          payments or deletion
   L      anything else, or a forced domain            opus     opus · bug,
                                                                 proof, simplify
@@ -286,7 +289,7 @@ $ orc explain models
   where to override
 
     orc.yaml     models: { worker: { S: sonnet, M: sonnet, L: opus } }
-    orc.yaml     models: { reviewer: opus, scout: haiku }
+    orc.yaml     models: { reviewer: { M: worker, L: opus }, reviewer_effort: high }
     per ticket   /orc --model opus add a login page
     per role     agents/*.md frontmatter · aliases sonnet | opus | haiku | inherit
 
@@ -297,16 +300,25 @@ $ orc explain models
 ```
 $ orc explain storage
 
-  store: vault        default · markdown files are the truth
-  store: postgres     opt in · rows are the truth · the vault is a mirror
+  state is JSON, words are markdown. In both store modes the truth for a
+  ticket is .orc/tickets/T-014.json (one record) plus T-014.events.jsonl
+  (append-only), committed with the project. The vault file keeps the spec
+  text people edit, under a header orc renders and never reads back.
+  Every lab that used markdown as machine state moved off it; so does orc.
+
+  store: vault        default · records in .orc/tickets · vault holds the words
+  store: postgres     opt in · the same records mirrored into rows
 
   agents never touch the store. They read a rendered spec and write through
   orc commands, so switching stores changes no prompt.
 
   vault                              postgres
   ────────────────────────────────── ──────────────────────────────────────
-  Tickets/T-014.md frontmatter       task_current_state → task_state_revisions
-  Tickets/T-014.log.md               task_events
+  .orc/tickets/T-014.json            task_current_state → task_state_revisions
+  .orc/tickets/T-014.events.jsonl    task_events
+  .orc/tickets/T-014.receipts.json   reports (kind: receipt)
+  .orc/tickets/T-014.handoff.json    reports (kind: handoff)
+  Tickets/T-014.md                   the spec text, rendered header
   git history of the spec            task_state_revisions, every version
   Lessons/L-041.md                   knowledge_entries
   Reports/T-014/*.md                 reports
@@ -397,9 +409,49 @@ $ orc explain security
 ```
 
 ```
+$ orc explain proof
+
+  the one rule the research kept repeating: nothing an agent writes is a
+  result. tests, "done" claims, lessons and status are claims until orc
+  has run something itself.
+
+  receipts     orc check runs the check command, every enforce-tier lesson
+               check and every "$ " line of the spec in the worktree, and
+               stores {sha, command, exit, tail} per run. A receipt whose
+               sha is not HEAD is stale.
+  revert       with new or changed tests present, orc applies the
+               production diff in reverse, runs the check, restores. Tests
+               that still pass are INERT and the reviewer is told so.
+  ratchet      tests and fixtures that existed before the ticket are
+               read-only for the worker (hook). New test files are welcome.
+  judges       each review pass is its own fresh process with one lens:
+               bug, proof (audits the receipts, does not generate them),
+               simplify (deletions and reuse only, never blocks). Findings
+               carry a confidence; only 0.7 and above cause a fix round.
+               A judge that cannot tell says unknown instead of pass.
+  hack shapes  every judge is told what cheating looks like: special-cased
+               inputs, hard-coded outputs, tests on mocks, edited or skipped
+               tests, changed check config, process.exit(0) escapes.
+  stop is ok   the worker is told that stopping and reporting a flawed
+               spec, test or environment counts as success. Published
+               numbers: an explicit abort path cut cheating from 54% to 9%.
+  handoff      every round ends with .orc/tickets/T-014.handoff.json
+               (goal, done-when, files changed, assumptions, unresolved,
+               check result). The next round is a fresh process that reads
+               it; orc never resumes a session into its own mistakes.
+  stall        3 identical tool calls warn, 6 stop; the worker gets 2x its
+               size's minutes as a wall-clock cap; a cap hit writes the
+               handoff and re-dispatches once fresh before needs-you.
+
+  sources: docs/research/05-orchestration-practices.md
+```
+
+```
 $ orc explain lessons
 
-  three tiers · nothing waits for you · you can veto
+  three tiers · nothing waits for you · you can veto · every lesson is
+  validated, stamped and expires, because a wrong rule that persists
+  measurably hurts later runs and overviews cost tokens for nothing
 
   reference   never loaded globally · the scout injects the ones whose scope
               matches the ticket's files · every reviewer candidate lands
@@ -435,9 +487,15 @@ $ orc explain lessons
     Never store the session token in localStorage. Use an httpOnly cookie.
     Seen in T-014 (review round 1) and T-019.
 
-  veto      orc lesson reject L-041
+  veto      orc lesson reject L-041       → provenance: mistake, never re-added
   demote    orc lesson tier L-041 reference
-  rules     negative constraints only · one sentence · the check is a command
+  shape     one sentence · starts with Never, Always, Do not, Only, Avoid,
+            Prefer · has a scope · anything else is rejected at the door
+  stamp     provenance: hypothesis (seen once) → verified (seen twice) ·
+            model: the generation it was observed on
+  expiry    untriggered for 60 days → kept on disk, not loaded into prompts
+  budget    at most 20 rules reach one worker prompt · no failure stories,
+            only the rule
   shipped   45 lessons about running agents · the enforceable ones are hooks
 ```
 
@@ -553,14 +611,19 @@ $ orc explain hooks
   event             matcher          does
   ───────────────── ──────────────── ────────────────────────────────────────
   PreToolUse        Read|Edit|Write  secret paths denied · worker writes
-                                     outside its worktree denied · spec and
-                                     state.json writable by the CLI only
+                                     outside its worktree denied · spec,
+                                     records and state writable by orc only ·
+                                     test ratchet: tests and fixtures that
+                                     existed before the ticket are read-only
+                                     for the worker (new test files allowed)
+  PreToolUse        every tool       stall detector: the same call 3 times
+                                     warns, 6 times stops the run
   PreToolUse        Bash             destructive and production lists: ask or
                                      deny · git on main from an agent denied ·
                                      git add -A denied while worktrees exist
-  SubagentStop      *                parse agent_transcript_path → turns →
-                                     ticket tokens and cost · append the log ·
-                                     advance state
+  SubagentStop      *                (subagent engine only) parse the
+                                     transcript → tokens and cost · the
+                                     headless engine reads the json result
   Stop              *                regenerate Dashboard.html, Board.md and
                                      Home.md if any ticket changed
   SessionStart      *                inject five lines from state.json: in
@@ -583,6 +646,11 @@ $ orc explain commands
             orc ticket show|list|set T-014      orc ready     orc needs-you
   run       orc run T-014 | orc run "<request>"    the engine, start to done card
   steps     orc scout T-014 --run    orc dispatch T-014 [--model m]
+            orc check T-014 runs the check command and every "$ " line of
+            the spec itself, keeps receipts, and reverts the production
+            change to prove the new tests fail without it
+            orc ticket allow-tests T-014 <glob>   logged exception to the
+            test ratchet, after a reviewer or you decided a test was wrong
             orc check T-014    orc review T-014    orc merge T-014
             orc undo T-014     orc resume T-014    orc close T-014 --failed
   see       orc status   orc dashboard [--open] [--watch]   orc cost [T-014|--week]
