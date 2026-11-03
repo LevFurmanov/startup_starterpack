@@ -439,6 +439,12 @@ $ orc explain proof
                (goal, done-when, files changed, assumptions, unresolved,
                check result). The next round is a fresh process that reads
                it; orc never resumes a session into its own mistakes.
+  commits      Conventional Commits everywhere: the worker's commits are
+               checked by the guard (type(scope): subject, under 72 chars,
+               Refs: T-### footer); the merge squashes a ticket into one
+               commit built from the ticket (type from the ticket type,
+               scope from the files, body = the criteria, footers = Refs,
+               Reviewed-by, Receipts); undo is a revert: commit.
   stall        3 identical tool calls warn, 6 stop; the worker gets 2x its
                size's minutes as a wall-clock cap; a cap hit writes the
                handoff and re-dispatches once fresh before needs-you.

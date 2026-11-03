@@ -7,7 +7,8 @@ postgres:
 check: {{check}}              # orc runs it itself and keeps receipts · null = each ticket adds a smoke check
 base_branch: {{base}}
 engine: headless              # headless = orc run spawns claude -p per agent · subagent = Agent tool inside your session
-merge: auto                   # auto = fast-forward after checks and review pass; undo with orc undo
+merge: auto                   # auto = merge after checks and review pass; undo with orc undo
+merge_strategy: squash        # squash = one Conventional Commits commit per ticket (default) · ff = keep the worker's commits
 
 models:                       # aliases resolve to the current generation
   control: inherit

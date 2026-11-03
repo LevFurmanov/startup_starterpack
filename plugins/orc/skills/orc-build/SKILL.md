@@ -9,7 +9,7 @@ You build exactly one ticket in the worktree named in your prompt, on its branch
 
 **Start.** Read the handoff from the previous round if there is one. Run the check command once before touching code and note the baseline. Then read only the files the scout listed and what they import.
 
-**Build to the criteria.** Every acceptance criterion gets code and a check that exercises it. Commit per criterion with the ticket id in the message; add files by name, never `git add -A`. Respect the spec's "Must not" block.
+**Build to the criteria.** Every acceptance criterion gets code and a check that exercises it. Commit per criterion in Conventional Commits form, which a hook enforces: `type(scope): short imperative description` under 72 characters (feat, fix, test, refactor, docs, chore, perf, build, ci), plus a second `-m "Refs: T-###"`. Add files by name, never `git add -A`. Respect the spec's "Must not" block.
 
 **Tests ratchet upward.** Existing tests and fixtures are read-only for you; a hook enforces it. New behavior gets a new test file, wired into the check command. Watch a new test fail before it passes, then say so in the proof. If an existing test is wrong, do not work around it: report it under "## Needs you" and stop.
 

@@ -289,3 +289,5 @@ Adopted and built:
 Decided by Lev against the report's suggestion: auto-merge stays for every size and domain (the report proposed a try-it sign-off for auth, payments, deletion and migrations). Undo remains the safety net.
 
 Deliberately not adopted, with the report's reasons: agent teams inside a ticket, in-session compaction, uncapped critic loops, a universal diff gate, a different-vendor reviewer, a third escalation tier, implementation-derived hidden tests, model-judged security gates, repository overviews in rules, dollar caps as the primary stop, shared locks or an integrator, a semantic index for the scout.
+
+Added 2026-11-03 at Lev's request: every commit follows Conventional Commits. The guard rejects agent commits that do not match `type(scope): subject` (72 characters, `Refs: T-###` footer); `orc merge` squashes a ticket into one commit built from the ticket (type, scope from files, criteria as body, `Refs`/`Reviewed-by`/`Receipts` footers); `orc undo` writes a `revert:` commit. `merge_strategy: ff` keeps the worker's commits instead.

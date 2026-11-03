@@ -177,7 +177,7 @@ function argsOf(argv) {
 
 /* ------------------------------ project --------------------------------- */
 const DEFAULTS = {
-  project: 'project', level: 0, store: 'vault', postgres: { url_env: 'ORC_DATABASE_URL' }, check: null, base_branch: 'main', engine: 'headless', merge: 'auto',
+  project: 'project', level: 0, store: 'vault', postgres: { url_env: 'ORC_DATABASE_URL' }, check: null, base_branch: 'main', engine: 'headless', merge: 'auto', merge_strategy: 'squash',
   models: { control: 'inherit', scout: 'haiku', worker: { S: 'sonnet', M: 'sonnet', L: 'opus', chore: 'haiku' }, reviewer: { S: 'worker', M: 'worker', L: 'opus', chore: 'worker' }, reviewer_effort: 'high' },
   review: { S: 'none', M: ['bug'], L: ['bug', 'proof', 'simplify'], chore: 'none', max_fix_rounds: 2, min_confidence: 0.7 },
   caps: { turns: { scout: 15, worker: { S: 25, M: 25, L: 40, chore: 15 }, reviewer: 20 }, minutes: { S: 10, M: 20, L: 40, chore: 10 }, budget_usd: { S: 2, M: 8, L: 25, chore: 1 }, max_hours: 2, stall: { warn: 3, stop: 6 } },
@@ -240,7 +240,7 @@ const lastLog = t => { try { return read(t.log).trim().split('\n').pop(); } catc
 function nextId(dir, prefix) { let n = 0; if (exists(dir)) for (const f of fs.readdirSync(dir)) { const m = f.match(new RegExp(`^${prefix}-(\\d+)`)); if (m) n = Math.max(n, +m[1]); } return `${prefix}-${String(n + 1).padStart(3, '0')}`; }
 const reportDir = (P, id) => path.join(P.reports, id);
 const setStatus = (t, status, msg) => { t.status = status; saveTicket(t); logEvent(t, status, msg || ''); };
-const acList = t => [...(t.body || '').matchAll(/^- (AC\d+)\b\s*(.*)$/gm)].map(m => ({ id: m[1], text: m[2] }));
+const acList = t => [...(t.body || '').matchAll(/^- (AC\d+)\b[ \t]*(.*)$/gm)].map(m => ({ id: m[1], text: m[2].trim() })).filter(a => a.text);
 const sizeOf = (cfg, t) => (t.type === 'chore' ? 'chore' : (t.size || 'M'));
 const workerModel = (cfg, t) => cfg.models.worker[sizeOf(cfg, t)] || 'sonnet';
 const forcedL = (cfg, text) => (cfg.forced_L || []).some(w => new RegExp(`\\b${w}`, 'i').test(text));
@@ -439,7 +439,7 @@ function cmdDispatch(ctx, id, opt) {
   const prompt = `# Build ${id} · ${t.title} · size ${t.size} · round ${round}${round === 1 ? ' (first attempt)' : ' (fix round)'}\nWork ONLY inside this directory and run every command there: ${wt}\nBranch: ${branch}. Never touch ${base}; orc merges. Never edit files under vault/Tickets. Prefix scratch files with ${id}-.\n\n## Spec\n${t.body.trim()}\n${decisions ? `\n## Decisions already made\n${decisions}\n` : ''}${files.length ? `\n## Files the scout found relevant\n${files.map(f => '- ' + f).join('\n')}\n` : ''}${lessons ? `\n## Rules that apply here\n${lessons}\n` : ''}${handoff ? `\n## Handoff from the previous round (written by orc)\n\`\`\`json\n${handoff}\n\`\`\`\n` : ''}${findings ? `\n## Review findings to fix (only findings marked 0.7 or higher block the merge)\n${findings}\n` : ''}${exists(checks) ? `\n## Last check output\n${read(checks).slice(-1500)}\n` : ''}
 ## How to work
 1. Start: read the handoff above if there is one, then run the check once before touching code and note the baseline: ${cfg.check || '(no check command; add one small smoke check for this behavior)'}
-2. Build. Commit per acceptance criterion on ${branch}; message "${id}: ...". Add files by name, never \`git add -A\`. Existing tests and fixtures are read-only (a hook enforces it): add new test files for new behavior.
+2. Build. Commit per acceptance criterion on ${branch} with a Conventional Commits message, which a hook enforces: \`type(scope): short imperative description\` under 72 characters, type one of feat, fix, test, refactor, docs, chore, perf, build, ci; then a second -m with \`Refs: ${id}\`. This ticket is a ${t.type}, so most commits are \`${t.type === 'fix' ? 'fix' : t.type === 'chore' ? 'chore' : 'feat'}\`; tests are \`test\`, the work report is \`docs\`. Example: git commit -m "feat(slug): add slugify with accent stripping" -m "Refs: ${id}". Add files by name, never \`git add -A\`. Existing tests and fixtures are read-only (a hook enforces it): add new test files for new behavior.
 3. Proof, not claims: orc re-runs every command itself and keeps receipts, so quote the command and its output in vault/Reports/${id}/work.md (inside the worktree) under "## Proof". A new test must be watched to fail before it passes.
 4. Vague or missing spec details (empty criteria, unclear wording, a choice the spec leaves open): pick the sensible default, record it under "## Assumptions" and keep going. Respect "## Must not" in the spec.
 5. Stopping is a valid success. If the spec, an existing test, or the environment is wrong, or you need a secret, an account, a payment, or a destructive or production action: write it under "## Needs you", leave the branch in a clean committed state and stop. Never work around a flawed test; never read or print secret values. You have ${cap} turns; running out is not failure if work.md says where things stand.
@@ -555,22 +555,41 @@ function cmdMerge(ctx, id) {
   const cur = git(P.root, ['rev-parse', '--abbrev-ref', 'HEAD']).out; if (cur !== base) die(`Main checkout is on ${cur}; switch to ${base} first.`);
   const rb = git(wt, ['rebase', base], { ok: true }); if (!rb.ok) { git(wt, ['rebase', '--abort'], { ok: true }); setStatus(t, 'needs-you', `rebase onto ${base} conflicts: ${rb.err.split('\n')[0]}`); die(`${id} → needs-you (rebase conflict)`); }
   if (cfg.check) { const r = sh(cfg.check, wt); if (!r.ok) { write(path.join(reportDir(P, id), 'checks.md'), `# Checks · ${id} · fail after rebase\n\n\`\`\`\n${r.out.slice(-8000)}\n\`\`\`\n`); t.checks = 'fail'; setStatus(t, 'fixing', 'check failed after rebase'); die(`${id} check failed after rebase · orc dispatch ${id}`); } }
-  const before = git(P.root, ['rev-parse', base]).out; t.diff_stat = git(wt, ['diff', '--shortstat', `${base}...HEAD`], { ok: true }).out.trim(); let ff = git(P.root, ['merge', '--ff-only', t.branch], { ok: true });
-  if (!ff.ok && /untracked working tree files would be overwritten/.test(ff.err)) {
-    const blockers = ff.err.split('\n').map(l => l.trim()).filter(l => l.startsWith('vault/Reports/') || l.startsWith('vault/Lessons/'));
+  const before = git(P.root, ['rev-parse', base]).out; t.diff_stat = git(wt, ['diff', '--shortstat', `${base}...HEAD`], { ok: true }).out.trim();
+  const changed = git(wt, ['diff', '--name-only', `${base}...HEAD`], { ok: true }).out.split('\n').filter(Boolean);
+  const squash = (cfg.merge_strategy || 'squash') !== 'ff';
+  const attempt = () => squash ? git(P.root, ['merge', '--squash', '--no-commit', t.branch], { ok: true }) : git(P.root, ['merge', '--ff-only', t.branch], { ok: true });
+  let mr = attempt();
+  if (!mr.ok && /untracked working tree files would be overwritten/.test(mr.err)) {
+    const blockers = mr.err.split('\n').map(l => l.trim()).filter(l => l.startsWith('vault/Reports/') || l.startsWith('vault/Lessons/'));
     for (const f of blockers) { try { fs.rmSync(path.join(P.root, f)); } catch {} }
-    if (blockers.length) ff = git(P.root, ['merge', '--ff-only', t.branch], { ok: true });
+    if (blockers.length) mr = attempt();
   }
-  if (!ff.ok) die(`fast-forward failed:\n${ff.err}`);
+  if (!mr.ok) { if (squash) git(P.root, ['reset', '--merge'], { ok: true }); die(`merge failed:\n${mr.err}`); }
+  if (squash) { const mf = path.join(P.cache, `${id}.commit.txt`); write(mf, commitMessage(ctx, t, changed)); const c = git(P.root, ['commit', '-q', '-F', mf], { ok: true }); if (!c.ok) { git(P.root, ['reset', '--merge'], { ok: true }); die(`commit failed:\n${c.err}`); } }
   const after = git(P.root, ['rev-parse', 'HEAD']).out;
   git(P.root, ['worktree', 'remove', '--force', wt], { ok: true }); git(P.root, ['branch', '-d', t.branch], { ok: true });
   t.merge_base = before; t.merge_sha = after; t.merged = now(); setStatus(t, 'merged', `${after.slice(0, 7)} · worktree removed`);
   const s = loadState(P); delete s.tickets[id]?.worktree; if (s.active === id) s.active = null; saveState(P, s);
   cmdBoard(ctx, true); say(`${id} merged ${after.slice(0, 7)} · undo with: orc undo ${id}`);
 }
+// One squash commit per ticket, in Conventional Commits form: type(scope): subject, body = the criteria, footers = refs and evidence.
+function commitMessage(ctx, t, files) {
+  const { cfg } = ctx; const type = t.type === 'fix' ? 'fix' : t.type === 'chore' ? 'chore' : 'feat';
+  const prod = (files || []).filter(f => !f.startsWith('vault/') && !matchPath(cfg.security.tests, f) && !matchPath(cfg.security.check_files, f));
+  const dirs = [...new Set(prod.map(f => f.includes('/') ? f.split('/')[0] : ''))].filter(Boolean);
+  const scope = dirs.length === 1 ? (prod.every(f => f.split('/').length > 2 && f.split('/')[1] === prod[0].split('/')[1]) ? prod[0].split('/')[1] : dirs[0]) : (!dirs.length && prod.length === 1 ? prod[0].replace(/\.[^.]+$/, '') : '');
+  let subject = String(t.title || '').replace(/^(feat|fix|chore|docs|test|refactor|perf|build|ci|style)(\([^)]*\))?!?:\s*/i, '').replace(/\.$/, '').trim(); subject = subject.charAt(0).toLowerCase() + subject.slice(1);
+  const head = `${type}${scope ? `(${scope.replace(/[^\w./@-]/g, '-').slice(0, 24)})` : ''}: ${subject}`.slice(0, 72).trim();
+  const body = acList(t).map(a => `- ${a.id} ${a.text}`.trim()).join('\n');
+  const foot = [`Refs: ${t.id}`, t.models?.reviewer ? `Reviewed-by: orc ${(t.review_passes || []).join('+') || 'review'} judge (${t.models.reviewer})` : null, `Receipts: ${t.receipts || 0} check(s) run by orc, revert check ${t.revert_check || 'none'}`].filter(Boolean).join('\n');
+  return `${head}\n\n${body ? body + '\n\n' : ''}${foot}\n`;
+}
 function cmdUndo(ctx, id) {
   const { P, cfg } = ctx; const t = loadTicket(P, id); if (t.status !== 'merged' || !t.merge_sha) die(`${id} is not merged`);
-  const r = git(P.root, ['revert', '--no-edit', `${t.merge_base}..${t.merge_sha}`], { ok: true }); if (!r.ok) { git(P.root, ['revert', '--abort'], { ok: true }); die(`revert failed:\n${r.err}`); }
+  const r = git(P.root, ['revert', '--no-commit', `${t.merge_base}..${t.merge_sha}`], { ok: true }); if (!r.ok) { git(P.root, ['revert', '--abort'], { ok: true }); die(`revert failed:\n${r.err}`); }
+  const subj = git(P.root, ['log', '-1', '--format=%s', t.merge_sha], { ok: true }).out; const uf = path.join(P.cache, `${id}.revert.txt`); write(uf, `revert: ${subj.replace(/^\w+(\([^)]*\))?!?: /, '').slice(0, 64)}\n\nThis reverts ${t.merge_base.slice(0, 7)}..${t.merge_sha.slice(0, 7)} (${id}) by orc undo.\n\nRefs: ${id}\n`);
+  const c = git(P.root, ['commit', '-q', '-F', uf], { ok: true }); if (!c.ok) { git(P.root, ['reset', '--merge'], { ok: true }); die(`revert commit failed:\n${c.err}`); }
   setStatus(t, 'undone', `reverted ${t.merge_base.slice(0, 7)}..${t.merge_sha.slice(0, 7)}`);
   const nid = nextId(P.tickets, 'T'); const file = path.join(P.tickets, `${nid}-${slug('redo ' + t.title)}.md`);
   write(file, fill(tmpl(P, 'ticket.md'), { id: nid, title: `Redo: ${t.title}`, size: t.size, type: 'fix', created: now() }));
@@ -755,11 +774,17 @@ function guard(ctx, input) {
     if (matchCmd(cfg.security.destructive, cmd)) return pause('destructive', cmd.slice(0, 160));
     if (matchCmd(cfg.security.production, cmd)) return pause('production', cmd.slice(0, 160));
     if (isAgent && /\bgit\b[^|;&]*\b(push|merge|checkout|switch|rebase)\b[^|;&]*\b(main|master)\b/.test(cmd)) return deny(`Agents never touch ${cfg.base_branch}. Commit on the ticket branch; orc merges.`);
+    if (isAgent && /\bgit\s+commit\b/.test(cmd) && !/\s(-F|--file)\b/.test(cmd)) {
+      const m = cmd.match(/(?:^|\s)(?:-[a-zA-Z]*m|--message)(?:=|\s+)(?:"([^"]*)"|'([^']*)'|(\S+))/); const msg = m ? (m[1] ?? m[2] ?? m[3] ?? '') : '';
+      if (msg && !CONVENTIONAL.test(msg.split(/\\n|\n/)[0])) return deny(`Commit messages follow Conventional Commits: type(scope): description. Types: feat, fix, test, refactor, docs, chore, perf, build, ci, style. Example: git commit -m "feat(slug): add slugify" -m "Refs: ${tid || 'T-###'}"`);
+      if (msg && msg.split(/\\n|\n/)[0].length > 72) return deny('Commit subject over 72 characters. Shorten it; details go in a second -m.');
+    }
     if (isAgent && /\bgit\s+add\s+(-A|--all|\.)(\s|$)/.test(cmd)) return deny('git add -A / git add . is blocked for agents. Add files by name.');
     if ((role === 'scout' || role === 'reviewer') && /\bgit\s+(commit|push|rebase|reset|checkout|switch|stash|merge)\b/.test(cmd)) return deny(`${role} is read-only: findings, not commits.`);
     if (role === 'worker' && /\b(rm|mv|git\s+rm|sed\s+-i|truncate)\b/.test(cmd)) for (const tok of cmd.split(/\s+/)) { const p = posix(tok.replace(/^["']|["']$/g, '')); if (p && /[\/.]/.test(p) && (matchPath(cfg.security.tests, p) || checkMentions(ctx, P.root).has(p)) && exists(path.join(P.root, p)) && !allowedTestEdit(P, tid, p)) return deny(`Test ratchet: ${p} is an existing test. Do not remove or rewrite it; add a new test file, or report under "## Needs you".`); }
   }
 }
+const CONVENTIONAL = /^(feat|fix|chore|docs|test|refactor|perf|build|ci|style|revert)(\([\w./@ -]+\))?!?: \S/;
 function allowedTestEdit(P, tid, rel) { if (!tid) return false; try { const t = loadTicket(P, tid); return (t.allow_test_edits || []).some(g => globRe(g).test(rel)); } catch { return false; } }
 function account(ctx, input) {
   const { P, cfg } = ctx; const at = String(input.agent_type || '').toLowerCase();
@@ -842,7 +867,7 @@ function cmdRun(ctx, pos, opt) {
     cmdDispatch(ctx, id, { model: opt.model }); t = loadTicket(P, id); const wt = wtOf(ctx, t);
     const r = runAgent(ctx, t, 'worker', path.join(P.cache, `${id}.build.md`), { cwd: wt });
     const work = path.join(wt, 'vault', 'Reports', id, 'work.md'); if (exists(work)) write(path.join(P.cache, `${id}.work.md`), read(work));
-    const dirty = git(wt, ['status', '--porcelain'], { ok: true }).out.trim(); if (dirty) { git(wt, ['add', '-A'], { ok: true }); git(wt, ['commit', '-qm', `${id}: work in progress (committed by orc after the worker stopped)`], { ok: true }); }
+    const dirty = git(wt, ['status', '--porcelain'], { ok: true }).out.trim(); if (dirty) { git(wt, ['add', '-A'], { ok: true }); git(wt, ['commit', '-qm', `chore(${id.toLowerCase()}): commit work the worker left uncommitted`, '-m', `Refs: ${id}`], { ok: true }); }
     const h = writeHandoff(ctx, t, round, { stopped: r.ok ? 'finished' : r.why });
     if (r.capHit) { logEvent(t, 'cap', `${r.why || 'turn cap hit'} · handoff written · ${round <= cfg.review.max_fix_rounds ? 'fresh re-dispatch' : 'out of rounds'}`); if (round > cfg.review.max_fix_rounds) { setStatus(t, 'needs-you', `worker kept hitting its caps: ${r.why || 'turn cap'}`); stop(t, `the worker ran out of turns or time ${round} times; see .orc/tickets/${id}.handoff.json`); } say(`  ${''.padEnd(10)} re-dispatching once with a fresh context and the handoff`); continue; }
     if (!r.ok) stop(t, `worker stopped: ${r.why}`);

@@ -67,7 +67,7 @@ There are two halves. The conversation runs in your Claude Code session: ticket,
 | check | engine | none | worktree | receipts, revert check |
 | review | engine | worker's model, opus for L | spec, diff, receipts | findings with confidence |
 | fix | engine | same as build | findings, handoff | commits, at most 2 rounds |
-| merge | engine | none | branch | one fast-forward commit on main |
+| merge | engine | none | branch | one squashed Conventional Commits commit on main |
 | learn | engine | none | work and review reports | lessons |
 | report | engine | none | records | done card, dashboard |
 
@@ -99,6 +99,8 @@ The research behind orc (docs/research/05-orchestration-practices.md) kept repea
 **Stall detector.** The same tool call three times in a row gets a warning, six times stops the run. A worker also has a wall-clock cap of twice the minutes for its size. A cap hit writes a handoff ledger and re-dispatches once in a fresh process before asking you.
 
 **Handoff, never resume.** Every round ends with `.orc/tickets/T-001.handoff.json`: goal, done-when, files changed, assumptions, unresolved items, check result. The next round is a fresh process that reads it. orc never resumes a session into its own mistakes.
+
+**Clean history.** Every commit follows Conventional Commits (conventionalcommits.org). The worker's commits are checked by the guard: `type(scope): short description` under 72 characters, with a `Refs: T-001` footer; anything else is rejected before it runs. The merge squashes the ticket into one commit built from the ticket itself: the type from the ticket type (feat, fix, chore), the scope from the files changed, the acceptance criteria as the body, and `Refs`, `Reviewed-by` and `Receipts` footers. `orc undo` adds a `revert:` commit. Set `merge_strategy: ff` in `orc.yaml` to keep the worker's individual commits instead.
 
 **Three pauses.** Secret files (`.env*`, `*key*`, `*secret*`, `*credential*`) can never be read, printed or written by an agent; when a task needs a secret, the ticket names the variable and where it goes and hands that step to you. Destructive commands (force push, hard reset, `rm -rf`, dropping tables) and production commands (deploys, publishes, ssh) pause the ticket. Everything else runs without approval, and every merge is one commit `orc undo T-001` reverts.
 
@@ -183,7 +185,7 @@ The single steps the engine runs, for when you want to drive by hand or watch on
 | `orc dispatch T-001 [--model opus]` | create branch and worktree, write the build prompt |
 | `orc check T-001` | run the checks, keep receipts, run the revert check |
 | `orc review T-001 [--pass bug]` then `--record` | write the judge prompts; record their reports |
-| `orc merge T-001` | rebase, re-check, fast-forward, remove the worktree |
+| `orc merge T-001` | rebase, re-check, squash into one conventional commit, remove the worktree |
 
 Skills the plugin installs: `/orc` (the conversation half), `/orc-skill-creator` (lessons into a skill), and ten background skills that agents and control load on their own: orc-questions, orc-spec, orc-scout, orc-build, orc-review, orc-done-card, orc-fix, orc-smoke, orc-explain, orc-status, orc-undo.
 
@@ -206,6 +208,7 @@ caps:
   minutes: { S: 10, M: 20, L: 40 }           # worker gets twice this
   budget_usd: { S: 2, M: 8, L: 25 }          # a backstop, not the main stop
   max_hours: 2                               # scout splits above this
+merge_strategy: squash                       # or ff to keep the worker's commits
 forced_L: [auth, login, password, payment, billing, stripe, delete, migration, secret, token]
 security:
   secrets, destructive, production           # the three pause lists
