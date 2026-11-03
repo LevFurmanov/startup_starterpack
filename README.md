@@ -8,6 +8,8 @@ You describe a change. It asks up to three easy questions. It builds in an isola
 
 ## Install
 
+No Claude Code yet? Section 1 of the [user guide](docs/GUIDE.md#1-install) walks through installing Claude Code, Node and git first. With those in place, inside Claude Code:
+
 ```
 /plugin marketplace add LevFurmanov/startup_starterpack
 /plugin install orc@orc

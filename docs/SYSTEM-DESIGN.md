@@ -122,6 +122,12 @@ $ orc explain loop
 ```
 $ orc explain install
 
+  before orc: Claude Code (claude --version), Node 20+ (node --version),
+  git (git --version). Claude Code installs with one line per system:
+    macOS/Linux/WSL      curl -fsSL https://claude.ai/install.sh | bash
+    Windows PowerShell   irm https://claude.ai/install.ps1 | iex
+  then run claude once to sign in. Node: nodejs.org · git: git-scm.com
+
   three commands once per machine, then one per project
 
     /plugin marketplace add <org>/orc          registers the marketplace

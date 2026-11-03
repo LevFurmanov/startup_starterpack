@@ -8,7 +8,33 @@ Status: pre-release. It has run end to end on Windows 11 with Node 24 and Claude
 
 ## 1. Install
 
-You need Claude Code 2.1 or newer, Node 20 or newer, and git. Inside Claude Code, in the project you want to work on:
+You need three things on your machine: Claude Code 2.1 or newer, Node 20 or newer, and git. Then orc itself, which is a Claude Code plugin. If you already use Claude Code from a terminal and have Node and git, skip to 1.2.
+
+### 1.1 Claude Code, Node and git
+
+**An account.** Claude Code needs a Claude Pro, Max, Team or Enterprise subscription, or a Claude Console account with API credits. The free claude.ai plan does not include it. Pick one at claude.com/pricing before you install.
+
+**Install Claude Code.** Open a terminal and run the line for your system. On Windows, a prompt that starts with `PS` is PowerShell and one that starts with `C:` is CMD; use the matching line.
+
+```
+macOS, Linux, WSL:   curl -fsSL https://claude.ai/install.sh | bash
+Windows PowerShell:  irm https://claude.ai/install.ps1 | iex
+Windows CMD:         curl -fsSL https://claude.ai/install.cmd -o install.cmd && install.cmd && del install.cmd
+```
+
+The installer prints nothing while it downloads. When it finishes, open a new terminal window and run `claude --version`. A working install prints a version such as `2.1.317 (Claude Code)`. If the shell says `claude` is not found, the install folder is not on your PATH yet; the page at code.claude.com/docs/en/troubleshoot-install covers that and every other install error. Homebrew (`brew install --cask claude-code`) and WinGet (`winget install Anthropic.ClaudeCode`) also work but do not update themselves. The native install updates in the background; `claude update` forces an update and `claude doctor` checks the install.
+
+**Sign in.** Run `claude` inside any folder. The first start opens your browser to log in with the account above. After that your login is remembered. Type `/exit` to leave.
+
+**Node.** orc's command line and its hooks are one JavaScript file, so Node must be installed even though Claude Code itself does not need it. Download the LTS version from nodejs.org and run the installer with the defaults. `node --version` should print v20 or higher.
+
+**git.** orc builds in git worktrees and merges with git, so git is required. On macOS, run `git --version` once and accept the prompt to install the command line tools. On Linux, install the `git` package. On Windows, install Git for Windows from git-scm.com with the defaults; it also gives Claude Code the Bash shell it prefers. Check with `git --version`.
+
+**Your project must be a git repository.** If it is not yet, run `git init` in its folder once. `orc init` tells you if any of the above is missing.
+
+### 1.2 orc
+
+Inside Claude Code, in the project you want to work on:
 
 ```
 /plugin marketplace add LevFurmanov/startup_starterpack
@@ -20,7 +46,7 @@ While the repository is private, point the marketplace at a local clone instead:
 
 `orc init` detects your check command (npm test, pytest, go test, cargo test), writes `orc.yaml`, creates the `vault/` folder, adds deny rules for secret files to `.claude/settings.json`, and appends a short block to `CLAUDE.md` that routes build requests to orc. Nothing else in your project changes.
 
-To use `orc` from a terminal as well, add `plugins/orc/bin` from the clone to your PATH. It contains `orc` (shell) and `orc.cmd` (Windows). Everything the plugin does is one file, `bin/orc.mjs`, with no dependencies.
+To use `orc` from a terminal as well, clone the repository (`git clone https://github.com/LevFurmanov/startup_starterpack`) and add its `plugins/orc/bin` folder to your PATH. It contains `orc` (shell) and `orc.cmd` (Windows). Everything the plugin does is one file, `bin/orc.mjs`, with no dependencies.
 
 ## 2. Your first ticket
 
