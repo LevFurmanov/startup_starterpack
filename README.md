@@ -29,18 +29,18 @@ You type what you want in plain words. orc turns it into a ticket, builds it in 
 There are no approval gates. It stops for exactly three things: a **secret**, a **destructive command**, or a **production action**. Those are yours. Everything else runs while you keep talking.
 
 ```mermaid
-flowchart LR
-  A["You: /orc add a login page"] --> B["Scout<br/>reads your project, sizes the job"]
-  B -->|unsure| Q["Up to 3 questions<br/>each with a recommended answer"]
-  B -->|confident| S["Spec"]
+flowchart TD
+  A["<b>You</b>: /orc add a login page"] --> B["<b>Scout</b> reads your project and sizes the job"]
+  B -->|unsure| Q["Up to 3 questions, each with a recommended answer"]
+  B -->|confident| S["<b>Spec</b>: goal, acceptance criteria, must-nots, how to verify"]
   Q --> S
-  S --> W["Worker builds<br/>in an isolated copy"]
-  W --> C["orc runs the checks<br/>and keeps receipts"]
-  C --> R["Fresh-eyes reviewer"]
+  S --> W["<b>Worker</b> builds in an isolated copy of your project"]
+  W --> C["<b>orc</b> runs the checks itself and keeps receipts"]
+  C --> R["<b>Reviewer</b> with fresh eyes judges the result"]
   R -->|finding| W
-  R -->|pass| M["One commit on main<br/>orc undo reverts it"]
-  M --> D["Done card + dashboard"]
-  W -.->|"secret · destructive<br/>production · broken test"| N["Needs you"]
+  R -->|pass| M["One clean commit on main"]
+  M --> D["Done card and dashboard · <code>orc undo</code> reverts it"]
+  W -.->|secret · destructive · production · broken test| N["<b>Needs you</b>"]
 ```
 
 ## Is this for you?
@@ -133,9 +133,9 @@ Open a terminal in your project folder, start `claude`, and type these three lin
 `orc init` finds your test command (npm test, pytest, go test, cargo test), writes `orc.yaml`, creates the `vault/` folder, adds deny rules for secret files, and appends a short block to `CLAUDE.md` so that build requests go to orc. Nothing else in your project changes. **No tests yet? Fine.** Each ticket then adds a small smoke check for the thing it built.
 
 <details>
-<summary>Testing from a private clone, or using <code>orc</code> from a terminal</summary>
+<summary>Installing from a local clone, or using <code>orc</code> from a terminal</summary>
 
-While the repository is private, point the marketplace at a local clone instead of GitHub:
+To test unreleased changes, or if GitHub is not reachable from your machine, point the marketplace at a local clone instead:
 
 ```
 git clone https://github.com/LevFurmanov/startup_starterpack
