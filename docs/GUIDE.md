@@ -42,7 +42,7 @@ Inside Claude Code, in the project you want to work on:
 /orc init
 ```
 
-To test unreleased changes, or if GitHub is not reachable from your machine, point the marketplace at a local clone instead: `/plugin marketplace add C:path	ostartup_starterpack`.
+To test unreleased changes, or if GitHub is not reachable from your machine, point the marketplace at a local clone instead: `/plugin marketplace add C:\path\to\startup_starterpack`.
 
 `orc init` detects your check command (npm test, pytest, go test, cargo test), writes `orc.yaml`, creates the `vault/` folder, adds deny rules for secret files to `.claude/settings.json`, and appends a short block to `CLAUDE.md` that routes build requests to orc. Nothing else in your project changes.
 
