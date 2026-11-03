@@ -4,7 +4,7 @@ A gate-free development orchestrator for Claude Code, for people who are not eng
 
 You describe a change. It asks up to three easy questions. It builds in an isolated copy of your project, checks its own work with an independent reviewer, merges one commit you can undo, and shows you a dashboard. It stops only for a secret, a destructive command or production.
 
-**Status: pre-release, under construction.** The design is in [docs/DESIGN.md](docs/DESIGN.md) and the terminal walkthrough in [docs/SYSTEM-DESIGN.md](docs/SYSTEM-DESIGN.md).
+**Status: pre-release, under construction.** Start with the [user guide](docs/GUIDE.md) (also as [PDF](docs/orc-guide.pdf)). The design is in [docs/DESIGN.md](docs/DESIGN.md) and the terminal walkthrough in [docs/SYSTEM-DESIGN.md](docs/SYSTEM-DESIGN.md).
 
 ## Install
 
