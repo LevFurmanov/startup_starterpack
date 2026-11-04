@@ -30,6 +30,12 @@ caps:
   budget_usd: { S: 2, M: 8, L: 25, chore: 1 }   # backstop, not the primary stop
   max_hours: 2                # scout splits anything it estimates above this into dependent tickets
   stall: { warn: 3, stop: 6 } # identical tool calls in a row
+  agents: auto                # how many agents may run at once · auto = from your RAM and cores (orc doctor shows it) · or a number, 1 = strictly one at a time
+
+machine:                      # only used when caps.agents is auto
+  ram_per_agent_gb: 1         # one headless Claude process plus the check command it runs · orc raises this when a real run peaks higher
+  reserve_gb: 4               # kept free for the OS, your browser and your own Claude Code session
+  max_agents: 6               # ceiling for auto, whatever the machine has
 
 forced_L: [auth, login, password, payment, billing, stripe, delete, migration, secret, token]
 

@@ -234,6 +234,10 @@ caps:
   minutes: { S: 10, M: 20, L: 40 }           # worker gets twice this
   budget_usd: { S: 2, M: 8, L: 25 }          # a backstop, not the main stop
   max_hours: 2                               # scout splits above this
+  agents: auto                               # agents at once: from your RAM and cores, or a number
+machine:
+  ram_per_agent_gb: 1                        # what one agent needs; raised by the peaks orc measures
+  reserve_gb: 4                              # kept for the OS, your browser and your own session
 merge_strategy: squash                       # or ff to keep the worker's commits
 forced_L: [auth, login, password, payment, billing, stripe, delete, migration, secret, token]
 security:
@@ -256,6 +260,8 @@ Costs from the live runs on a small repository, with the default models:
 | titleCase with tests | haiku, 1 cent | sonnet, 13 cents | opus, 32 cents | $0.46 |
 
 Each ticket took about three minutes of agent time. The reviewer costs as much as the build on small tickets, which is why the default reviewer for size M is now the worker's model at high effort; `orc models suggest` shows whether that holds on your project.
+
+**RAM.** Each agent is its own Claude process: about 0.3 GB resident on a short run, up to about 1 GB on a long one, plus whatever your test command needs while it runs. orc limits how many agents run at once from your machine: the smallest of RAM (total minus a 4 GB reserve, divided by 1 GB per agent), cores minus two, and a ceiling of six. On a laptop with 16 GB and 20 cores that is six; on 8 GB it is four. `orc doctor` prints the number with the arithmetic, `orc status` shows how many are running, and every run records the real peak of each agent's process tree: the done card shows it per agent, `orc doctor` per role, and the estimate rises automatically when a run peaks higher. Set `caps.agents` in `orc.yaml` to pin a number; `1` means strictly one agent at a time. The limit covers both the engine's headless agents and any agents your Claude Code session starts, and when free memory drops below what one agent needs the next one waits.
 
 ## 10. Known limits
 

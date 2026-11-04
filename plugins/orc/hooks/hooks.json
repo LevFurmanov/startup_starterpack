@@ -3,7 +3,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Read|Edit|Write|MultiEdit|NotebookEdit|Bash|Grep|Glob",
+        "matcher": "Read|Edit|Write|MultiEdit|NotebookEdit|Bash|Grep|Glob|Agent",
         "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/orc.mjs\" hook guard", "timeout": 10 }]
       }
     ],

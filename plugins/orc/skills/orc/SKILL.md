@@ -21,3 +21,5 @@ Steps. Run each `orc` command with Bash and follow what it prints.
 8. If the output says `needs you`, tell the user in plain words what is needed and where to put it, then stop. They resume with `orc resume T-###` followed by `orc run T-###`, or by asking you to continue. If the worker reported that an existing test is wrong, decide with the user, then `orc ticket allow-tests T-### <path>` before resuming.
 
 Outside Claude Code the same engine runs from a terminal: `orc run "what you want"` skips the questions and uses defaults.
+
+The engine limits how many agents run at once from the machine's RAM and cores (`orc doctor` shows the number and `caps.agents` in `orc.yaml` pins it). If an Agent call is denied for that reason, wait for a running agent to finish; never retry in a loop.

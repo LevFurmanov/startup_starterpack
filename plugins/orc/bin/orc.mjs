@@ -3,7 +3,8 @@
 // Node 20+, no dependencies. Design: docs/SYSTEM-DESIGN.md (`orc explain`).
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, spawn } from 'node:child_process';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const PLUGIN_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -180,7 +181,8 @@ const DEFAULTS = {
   project: 'project', level: 0, store: 'vault', postgres: { url_env: 'ORC_DATABASE_URL' }, check: null, base_branch: 'main', engine: 'headless', merge: 'auto', merge_strategy: 'squash',
   models: { control: 'inherit', scout: 'haiku', worker: { S: 'sonnet', M: 'sonnet', L: 'opus', chore: 'haiku' }, reviewer: { S: 'worker', M: 'worker', L: 'opus', chore: 'worker' }, reviewer_effort: 'high' },
   review: { S: 'none', M: ['bug'], L: ['bug', 'proof', 'simplify'], chore: 'none', max_fix_rounds: 2, min_confidence: 0.7 },
-  caps: { turns: { scout: 15, worker: { S: 25, M: 25, L: 40, chore: 15 }, reviewer: 20 }, minutes: { S: 10, M: 20, L: 40, chore: 10 }, budget_usd: { S: 2, M: 8, L: 25, chore: 1 }, max_hours: 2, stall: { warn: 3, stop: 6 } },
+  caps: { turns: { scout: 15, worker: { S: 25, M: 25, L: 40, chore: 15 }, reviewer: 20 }, minutes: { S: 10, M: 20, L: 40, chore: 10 }, budget_usd: { S: 2, M: 8, L: 25, chore: 1 }, max_hours: 2, stall: { warn: 3, stop: 6 }, agents: 'auto' },
+  machine: { ram_per_agent_gb: 1, reserve_gb: 4, max_agents: 6 },
   forced_L: ['auth', 'login', 'password', 'payment', 'billing', 'stripe', 'delete', 'migration', 'secret', 'token'],
   pricing: { fable: { in: 10, out: 50, cache_read: 1 }, opus: { in: 4, out: 20, cache_read: 0.2 }, sonnet: { in: 2, out: 10, cache_read: 0.2 }, haiku: { in: 0.1, out: 0.5, cache_read: 0.01 } },
   lessons: { guide_cap_lines: 30, promote_to_guide_at: 2, promote_to_enforce_at: 3, per_ticket: 20, expire_days: 60 },
@@ -382,7 +384,8 @@ function statusLines(ctx) {
     `in flight   ${fly.length ? fly.map(t => `${t.id} ${t.status} (${t.size})`).join(' · ') : 'nothing'}`,
     `needs-you   ${ny.length ? ny.map(t => `${t.id}: ${lastLog(t).replace(/^\S+ \S+\s+\S+\s+/, '')}`).join(' · ') : 'nothing'}`,
     `merged 7d   ${m7.length} tickets · ${usd(m7.reduce((a, t) => a + (+t.cost_usd || 0), 0))}`,
-    `ready       ${ready.length ? ready.map(t => t.id).join(', ') : 'nothing'}`];
+    `ready       ${ready.length ? ready.map(t => t.id).join(', ') : 'nothing'}`,
+    (mi => `machine     ${mi.cores} cores · ${mi.total.toFixed(1)} GB RAM, ${mi.free.toFixed(1)} GB free · agents at once ${mi.limit} (${mi.configured ? 'orc.yaml' : 'auto'}) · ${Object.keys(agentsLive(ctx.P)).length} running`)(machineInfo(ctx))];
 }
 
 function createTicket(ctx, title, o = {}) {
@@ -614,6 +617,7 @@ function cmdDone(ctx, id) {
   if (t.diff_stat) say(line('Diff', t.diff_stat));
   say(line('Review', rfs.length ? `${ok} of ${acs.length || Object.keys(marks).length} criteria verified${unk ? `, ${unk} unknown` : ''} · ${t.review_findings || 0} finding(s), ${t.review_blocking || 0} blocking · ${n} round(s) · ${t.models?.reviewer || ''}` : `skipped (size ${t.size})`));
   say(line('Cost', `${usd(t.cost_usd)}${tok ? ' · ' + tok : ''}`)); if (learned) say(line('Learned', learned));
+  if (t.ram_gb && Object.keys(t.ram_gb).length) say(line('Peak RAM', Object.entries(t.ram_gb).map(([k, v]) => `${k} ${v} GB`).join(' · ')));
   say(line('Undo', `orc undo ${id}`)); say(`└${'─'.repeat(W - 1)}┘`);
 }
 
@@ -673,6 +677,10 @@ function cmdDoctor(ctx) {
   const ok = (c, m) => say(`${c ? '✓' : '✗'} ${m}`);
   ok(+process.versions.node.split('.')[0] >= 20, `node ${process.versions.node}`);
   ok(spawnSync('git', ['--version']).status === 0, 'git'); ok(spawnSync(process.platform === 'win32' ? 'where' : 'which', ['claude']).status === 0, 'claude on PATH');
+  const mi = machineInfo(ctx); ok(true, `machine: ${mi.cores} cores · ${mi.total.toFixed(1)} GB RAM · ${mi.free.toFixed(1)} GB free now`);
+  ok(mi.limit <= mi.auto, `agents at once: ${mi.limit}${mi.configured ? ` (caps.agents in orc.yaml; auto would be ${mi.auto})` : ` (auto: RAM allows ${mi.byRam} at ${mi.per} GB each after ${mi.reserve} GB reserve · cores allow ${mi.byCpu} · ceiling ${mi.max})`}${mi.limit > mi.auto ? ' · above what this machine supports, expect swapping' : ''}`);
+  const pk = Object.entries(mi.observed); ok(true, pk.length ? `observed peak RAM per agent: ${pk.map(([r, v]) => `${r} ${v.gb} GB (${v.ticket})`).join(' · ')}` : 'observed peak RAM per agent: none yet (every orc run records it)');
+  if (ctx) { const n = Object.keys(agentsLive(ctx.P)).length; ok(true, `${n} agent(s) running now`); }
   ok(!!ctx, 'orc.yaml found'); if (!ctx) return;
   ok(exists(ctx.P.vault), 'vault/'); ok(!!ctx.cfg.check, `check command: ${ctx.cfg.check || 'none (tickets must add smoke checks)'}`);
   const wts = git(ctx.P.root, ['worktree', 'list'], { ok: true }).out.split('\n').length - 1; ok(true, `${wts} worktree(s) open`);
@@ -730,7 +738,7 @@ function hook(event) {
     if (event === 'session-start') return say(statusLines(ctx).join('\n') + '\nUse /orc <request> to build. `orc explain` describes the system.');
     if (event === 'prompt') { const ts = loadTickets(ctx.P).filter(t => ['asking', 'needs-you'].includes(t.status)); if (ts.length) say(`orc: ${ts.map(t => `${t.id} is ${t.status}`).join(', ')}.`); return; }
     if (event === 'stop') { const dash = path.join(ctx.P.vault, 'Dashboard.html'); const latest = Math.max(0, ...(exists(ctx.P.tickets) ? fs.readdirSync(ctx.P.tickets).map(f => fs.statSync(path.join(ctx.P.tickets, f)).mtimeMs) : [0])); if (!exists(dash) || fs.statSync(dash).mtimeMs < latest) cmdBoard(ctx, true); return; }
-    if (event === 'subagent-stop') return account(ctx, input);
+    if (event === 'subagent-stop') { releaseSubagent(ctx.P, input.session_id); return account(ctx, input); }
   } catch (e) { process.stderr.write(`orc hook ${event}: ${e.message}\n`); }
 }
 const out = o => say(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', ...o } }));
@@ -742,6 +750,12 @@ function guard(ctx, input) {
   const deny = r => out({ permissionDecision: 'deny', permissionDecisionReason: r });
   const st = loadState(P); const tid = process.env.ORC_TICKET || st.active; const wt = tid ? st.tickets[tid]?.worktree : null;
   const pause = (kind, r) => { if (interactive) return out({ permissionDecision: 'ask', permissionDecisionReason: `${kind}: ${r}` }); if (tid) { try { const t = loadTicket(P, tid); if (t.status !== 'needs-you') setStatus(t, 'needs-you', `${kind} blocked: ${r.slice(0, 120)}`); } catch {} } return deny(`${kind} command blocked while running in the background. The ticket now needs the user: ${r}`); };
+  if (tool === 'Agent') {
+    if (isAgent) return deny('Agents do not start agents. Do the work yourself, or stop and report under "## Needs you".');
+    const mi = machineInfo(ctx); const n = Object.keys(agentsLive(P)).length;
+    if (n >= mi.limit) return deny(`Agent limit reached: ${n} running, limit ${mi.limit} (${mi.configured ? 'caps.agents in orc.yaml' : `auto from ${mi.total.toFixed(0)} GB RAM and ${mi.cores} cores`}). Wait for a running agent to finish instead of retrying; orc doctor explains the number.`);
+    registerAgent(P, { pid: claudeAncestor(), session: input.session_id || null, kind: 'subagent', role: String(ti.subagent_type || 'agent'), ticket: tid || null }); return;
+  }
   // Stall detector: the same call repeated is a loop, not progress. Warn once, then stop the run.
   if (isAgent && tid && ['Read', 'Edit', 'Write', 'MultiEdit', 'Bash', 'Grep', 'Glob'].includes(tool)) {
     const key = tool + ' ' + JSON.stringify(ti).replace(/\s+/g, ' ').slice(0, 400); const sf = path.join(P.orc, 'stall', `${tid}-${role}.json`);
@@ -758,7 +772,7 @@ function guard(ctx, input) {
     if (matchPath(cfg.security.secrets, rel)) return deny(`${rel} matches a secret pattern. Never read or write secret values. Name the variable and where it goes, then hand that step to the user.`);
     if (tool === 'Read') return;
     if (isAgent && rel.startsWith('vault/Tickets/')) return deny('Ticket specs are written by control and orc only. Put findings in your report file.');
-    if (rel.startsWith('.orc/state.json') || rel.startsWith('.orc/tickets/')) return deny('orc state is written by orc only.');
+    if (rel.startsWith('.orc/state.json') || rel.startsWith('.orc/cache/agents.json') || rel.startsWith('.orc/tickets/')) return deny('orc state is written by orc only.');
     if (role === 'worker') {
       if (wt && !abs.startsWith(path.resolve(wt)) && !rel.startsWith('vault/Reports/')) return deny(`Workers write only inside their worktree: ${wt}`);
       const inWt = wt && abs.startsWith(path.resolve(wt)) ? posix(path.relative(wt, abs)) : rel;
@@ -804,6 +818,74 @@ function recordUsage(ctx, t, role, u, reported) {
   saveTicket(t); logEvent(t, 'cost', `${role} ${family(u.model)} ${fmtK(u.in + u.out)} tokens · ${u.turns} turns · ${usd(usd_)} · ticket total ${usd(t.cost_usd)}`);
 }
 
+/* ------------------------------ machine --------------------------------- */
+// How many agents may run at once comes from the machine, not from hope: each headless Claude process is a few
+// hundred MB and the check command it runs can add more. caps.agents in orc.yaml pins it; auto derives it from RAM
+// and cores and raises the per-agent estimate whenever a real run peaks higher. The registry in .orc/agents.json is
+// shared by every orc run process and by the control session's Agent calls, so the limit holds across all of them. It lives in .orc/cache (never committed).
+const GB = 2 ** 30;
+function machineInfo(ctx) {
+  const cfg = ctx?.cfg || DEFAULTS; const P = ctx?.P; const m = cfg.machine || DEFAULTS.machine;
+  const total = os.totalmem() / GB, free = os.freemem() / GB, cores = os.cpus().length || 1;
+  const observed = (P ? loadState(P).machine?.peaks : null) || {}; const seen = Math.max(0, ...Object.values(observed).map(v => +v.gb || 0));
+  const per = Math.max(+m.ram_per_agent_gb || 1, Math.ceil(seen * 1.2 * 10) / 10); const reserve = +m.reserve_gb || 4; const max = +m.max_agents || 6;
+  const byRam = Math.max(1, Math.floor((total - reserve) / per)); const byCpu = Math.max(1, cores - 2);
+  const auto = Math.max(1, Math.min(byRam, byCpu, max)); const set = cfg.caps?.agents;
+  const limit = set !== undefined && set !== null && set !== 'auto' && +set > 0 ? Math.floor(+set) : auto;
+  return { total, free, cores, per, reserve, max, byRam, byCpu, auto, limit, configured: limit !== auto || (set !== 'auto' && set !== undefined && set !== null) ? limit : null, observed };
+}
+const agentsFile = P => path.join(P.cache, 'agents.json');
+const alive = pid => { if (!pid) return false; try { return process.kill(pid, 0); } catch (e) { return e.code === 'EPERM'; } };
+function agentsLive(P) {
+  let reg = {}; try { reg = JSON.parse(read(agentsFile(P))); } catch {}
+  const now = Date.now(); const live = {};
+  for (const [k, v] of Object.entries(reg)) { const age = now - Date.parse(v.started || 0); const ok = v.pid ? alive(v.pid) && age < 4 * 3600e3 : age < 2 * 3600e3; if (ok) live[k] = v; }
+  if (Object.keys(live).length !== Object.keys(reg).length) write(agentsFile(P), JSON.stringify(live, null, 1));
+  return live;
+}
+function registerAgent(P, entry) { const live = agentsLive(P); const key = `${entry.kind}:${entry.pid || entry.session || 'x'}:${Date.now()}`; live[key] = { ...entry, started: new Date().toISOString() }; write(agentsFile(P), JSON.stringify(live, null, 1)); return key; }
+function releaseAgent(P, key) { const live = agentsLive(P); if (key in live) { delete live[key]; write(agentsFile(P), JSON.stringify(live, null, 1)); } }
+function releaseSubagent(P, session) { const live = agentsLive(P); const k = Object.keys(live).filter(k => live[k].kind === 'subagent' && (!session || live[k].session === session)).sort()[0]; if (k) releaseAgent(P, k); }
+const sleepMs = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+function acquireSlot(ctx, role, t) {
+  const { P, cfg } = ctx; const t0 = Date.now(); let said = false;
+  for (;;) {
+    const mi = machineInfo(ctx); const n = Object.keys(agentsLive(P)).length; const lowMem = n > 0 && mi.free < mi.per;
+    if (n < mi.limit && !lowMem) { const key = registerAgent(P, { pid: process.pid, kind: 'headless', role, ticket: t.id }); process.on('exit', () => { try { releaseAgent(P, key); } catch {} }); return key; }
+    if (!said) { say(`  ${''.padEnd(10)} waiting for an agent slot: ${n} running, limit ${mi.limit} (${mi.configured ? 'orc.yaml' : 'auto'})${lowMem ? ` · ${mi.free.toFixed(1)} GB free, one agent needs about ${mi.per} GB` : ''}`); said = true; }
+    if (Date.now() - t0 > (cfg.caps.max_hours || 2) * 3600e3) return null;
+    sleepMs(3000);
+  }
+}
+// Process list with resident memory, for the sampler. PowerShell on Windows, ps elsewhere.
+function procList() {
+  if (process.platform === 'win32') {
+    const r = spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', 'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId) $($_.WorkingSetSize) $($_.Name)" }'], { encoding: 'utf8', windowsHide: true, timeout: 30000 });
+    return (r.stdout || '').split('\n').map(l => l.trim().split(' ')).filter(a => a.length >= 3 && +a[0]).map(a => ({ pid: +a[0], ppid: +a[1], rss: +a[2] / GB, name: a.slice(3).join(' ') }));
+  }
+  const r = spawnSync('ps', ['-axo', 'pid=,ppid=,rss=,comm='], { encoding: 'utf8', timeout: 30000 });
+  return (r.stdout || '').split('\n').map(l => l.trim().split(/\s+/)).filter(a => a.length >= 3 && +a[0]).map(a => ({ pid: +a[0], ppid: +a[1], rss: +a[2] * 1024 / GB, name: a.slice(3).join(' ') }));
+}
+function claudeAncestor() { try { const ps = procList(); let pid = process.ppid; for (let i = 0; i < 8 && pid; i++) { const p = ps.find(x => x.pid === pid); if (!p) return null; if (/claude/i.test(p.name)) return p.pid; pid = p.ppid; } } catch {} return null; }
+// orc sample <parent pid> <out file>: follows the claude process the parent spawned and its children, writes the peak
+// resident memory of the whole tree. Started detached by runAgent, killed when the agent returns.
+function sampler(parent, outFile) {
+  const t0 = Date.now(); let peak = 0, root = null, samples = 0;
+  while (Date.now() - t0 < 4 * 3600e3) {
+    const ps = procList(); if (!ps.length) { sleepMs(5000); continue; }
+    if (!root || !ps.some(p => p.pid === root)) { const c = ps.find(p => p.ppid === parent && /claude/i.test(p.name)); if (!c) { if (root || Date.now() - t0 > 90000) break; sleepMs(1500); continue; } root = c.pid; }
+    const ids = new Set([root]); let grew = true; while (grew) { grew = false; for (const p of ps) if (ids.has(p.ppid) && !ids.has(p.pid) && p.pid !== process.pid) { ids.add(p.pid); grew = true; } }
+    const sum = ps.filter(p => ids.has(p.pid)).reduce((a, p) => a + p.rss, 0); samples++;
+    if (sum > peak) { peak = sum; write(outFile, JSON.stringify({ peak_gb: +peak.toFixed(2), procs: ids.size, samples, at: new Date().toISOString() })); }
+    sleepMs(4000);
+  }
+}
+function recordPeak(ctx, t, role, label, peak) {
+  const { P } = ctx; const t2 = loadTicket(P, t.id); t2.ram_gb = { ...(t2.ram_gb || {}), [label]: Math.max(+(t2.ram_gb || {})[label] || 0, peak.peak_gb) }; saveTicket(t2);
+  const s = loadState(P); s.machine = s.machine || {}; s.machine.peaks = s.machine.peaks || {}; const cur = s.machine.peaks[role];
+  if (!cur || peak.peak_gb > cur.gb) s.machine.peaks[role] = { gb: peak.peak_gb, procs: peak.procs, ticket: t.id, at: new Date().toISOString() }; saveState(P, s);
+}
+
 /* ------------------------------ engine ---------------------------------- */
 // orc run: the loop in code. Each agent is a headless `claude -p` process with the model, turn cap, wall-clock cap,
 // dollar backstop, tool list and guard set here. Agents do the work; orc owns state, git, checks, review routing,
@@ -823,7 +905,12 @@ function runAgent(ctx, t, role, promptFile, o = {}) {
   try { fs.rmSync(path.join(P.orc, 'stall', `${t.id}-${role}.json`), { force: true }); } catch {}
   const n = loadState(P).tickets[t.id]?.round || 1; const t0 = Date.now(); const label = o.label || role;
   say(`  ${label.padEnd(10)} ${model}${effort ? ` (${effort})` : ''} · up to ${turns} turns / ${minutes} min / ${usd(budget)} · ${role === 'worker' ? posix(path.relative(P.root, cwd)) : 'repo'}`);
+  const slot = acquireSlot(ctx, role, t); if (!slot) { logEvent(t, 'agent', `${label} got no agent slot within ${cfg.caps.max_hours || 2} h`); return { ok: false, why: `no free agent slot in ${cfg.caps.max_hours || 2} hours (limit ${machineInfo(ctx).limit}; orc doctor explains it)` }; }
+  const peakFile = path.join(P.cache, `${t.id}.${label}-${n}.ram.json`); try { fs.rmSync(peakFile, { force: true }); } catch {}
+  let sampler = null; try { sampler = spawn(process.execPath, [fileURLToPath(import.meta.url), 'sample', String(process.pid), peakFile], { detached: true, stdio: 'ignore', windowsHide: true }); sampler.unref(); } catch {}
   const r = spawnSync(CLAUDE_BIN, args, { cwd, env, input: read(promptFile), encoding: 'utf8', maxBuffer: 64e6, timeout: minutes * 60000, windowsHide: true });
+  try { if (sampler) process.kill(sampler.pid); } catch {} releaseAgent(P, slot);
+  let peak = null; try { peak = JSON.parse(read(peakFile)); } catch {} if (peak?.peak_gb) recordPeak(ctx, t, role, label, peak);
   const raw = (r.stdout || '').trim(); let j = null; try { j = JSON.parse(raw.slice(raw.indexOf('{'))); } catch {}
   write(path.join(P.cache, `${t.id}.${label}-${n}.json`), raw || (r.stderr || '') || String(r.error || ''));
   const mins = ((Date.now() - t0) / 60000).toFixed(1); const timedOut = r.error?.code === 'ETIMEDOUT';
@@ -832,7 +919,7 @@ function runAgent(ctx, t, role, promptFile, o = {}) {
   recordUsage(ctx, loadTicket(P, t.id), role, { in: us.input_tokens || 0, out: us.output_tokens || 0, cache_read: us.cache_read_input_tokens || 0, cache_write: us.cache_creation_input_tokens || 0, model: mu || model, turns: j.num_turns || 1 }, typeof j.total_cost_usd === 'number' ? j.total_cost_usd : null);
   const s = loadState(P); const stalled = s.tickets[t.id]?.stalled; s.tickets[t.id] = { ...(s.tickets[t.id] || {}), stalled: null, sessions: { ...(s.tickets[t.id]?.sessions || {}), [`${label}-${n}`]: j.session_id } }; saveState(P, s);
   const denied = (j.permission_denials || []).length; const t2 = loadTicket(P, t.id); const capHit = (j.num_turns || 0) >= turns || /max_turns|budget/i.test(String(j.terminal_reason || ''));
-  say(`  ${''.padEnd(10)} done in ${mins} min · ${j.num_turns || '?'} turns · ${usd(j.total_cost_usd)}${denied ? ` · ${denied} blocked call(s)` : ''}${stalled ? ' · stalled' : ''}${capHit ? ' · cap hit' : ''} · ${j.terminal_reason || j.stop_reason || ''}`);
+  say(`  ${''.padEnd(10)} done in ${mins} min · ${j.num_turns || '?'} turns · ${usd(j.total_cost_usd)}${denied ? ` · ${denied} blocked call(s)` : ''}${stalled ? ' · stalled' : ''}${capHit ? ' · cap hit' : ''}${peak?.peak_gb ? ` · peak RAM ${peak.peak_gb} GB` : ''} · ${j.terminal_reason || j.stop_reason || ''}`);
   if (t2.status === 'needs-you') return { ok: false, why: lastLog(t2).replace(/^\S+ \S+\s+\S+\s+/, '') };
   if (stalled) return { ok: false, capHit: true, why: `stalled: ${stalled}` };
   return { ok: !j.is_error, capHit, why: j.is_error ? String(j.result || '').slice(0, 300) : '', j };
@@ -896,6 +983,7 @@ const { pos, opt } = argsOf(process.argv.slice(2)); const [cmd, ...rest] = pos;
 if (!cmd || cmd === 'help' || opt.help) { say(`orc ${VERSION} · gate-free development orchestrator for Claude Code\n\nsetup     orc init [--store vault|postgres] · orc doctor · orc explain [topic]\ntickets   orc new "<title>" [--size S|M|L] [--type feature|fix|chore] · orc ticket list|show|set|log · orc ready · orc needs-you\nrun       orc run T-001 | orc run "<request>"  (the engine: scout → build → check → review → merge)
 steps     orc scout T-001 [--run|--record] · orc dispatch T-001 [--model m] · orc check T-001 · orc review T-001 [--record] · orc merge T-001 · orc undo T-001 · orc resume T-001 · orc close T-001 [--failed]\nsee       orc status · orc board · orc done T-001 · orc cost [T-001|--week] · orc models suggest\nlearn     orc lessons list [--all]|add|reject|tier|skill\nstore     orc store status|migrate|postgres\n\n/orc <request> inside Claude Code drives all of this for you.`); process.exit(0); }
 if (cmd === 'hook') { hook(rest[0]); process.exit(0); }
+if (cmd === 'sample') { sampler(+rest[0], rest[1]); process.exit(0); }
 if (cmd === 'init') { cmdInit(opt); process.exit(0); }
 if (cmd === 'explain') { cmdExplain(rest); process.exit(0); }
 if (cmd === 'version') { say(VERSION); process.exit(0); }

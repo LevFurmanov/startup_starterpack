@@ -216,6 +216,8 @@ Every agent runs with a turn cap, a time cap and a dollar budget set by its tick
 
 Each took about three minutes of agent time. The budgets per size are in `orc.yaml` (S $2, M $8, L $25 by default) and `orc models suggest` tells you, from your own history, whether a cheaper or dearer model would do better.
 
+**RAM.** Each agent is its own Claude process, roughly 0.3 to 1 GB plus your test command. orc counts how many can run at once from your machine (RAM after a 4 GB reserve, cores, a ceiling of six) and never starts more, in the engine or from your session. `orc doctor` prints the number and the arithmetic; every run records each agent's real peak so the estimate adjusts to your project. Set `caps.agents` in `orc.yaml` to pin it lower, down to one at a time.
+
 ## Where things live
 
 ```

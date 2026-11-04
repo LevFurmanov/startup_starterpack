@@ -25,6 +25,7 @@ $ orc explain
     hooks       what is enforced by the harness, not by prose
     commands    the CLI reference
     levels      what Level 0 and Level 1 turn on
+    machine     how many agents run at once, from your RAM and cores
 
   run `orc explain <topic>`
 ```
@@ -562,6 +563,37 @@ $ orc explain cost
     turns     worker 40 · reviewer 20 · scout 15
     budget    S $2 · M $8 · L $25 at list price
     stall     10 idle minutes → killed → needs-you
+```
+
+```
+$ orc explain machine
+
+  agents at once = the smallest of
+    RAM       (total − machine.reserve_gb) ÷ machine.ram_per_agent_gb    (15.6 − 4) ÷ 1 = 11
+    cores     logical cores − 2                                           20 − 2 = 18
+    ceiling   machine.max_agents                                          6
+  → 6 on this machine · orc doctor prints yours, with the arithmetic
+
+  what one agent needs
+    a headless Claude process is ~0.3 GB resident on a short run and up to ~1 GB on a
+    long one, plus whatever the check command needs (a test runner can add 0.5 GB+).
+    ram_per_agent_gb: 1 is the starting estimate. Every orc run samples the agent's
+    process tree every 4 seconds and keeps the peak per role in .orc/state.json; auto
+    then uses the larger of the estimate and 1.2 × the highest peak seen. The done card
+    shows the peak per agent, orc doctor the peak per role.
+
+  the limit holds everywhere
+    headless engine   each orc run takes a slot in .orc/cache/agents.json before it spawns an
+                      agent, waits while every slot is taken, frees it when the agent
+                      returns (dead processes free their slots on the next check)
+    control session   the PreToolUse hook on Agent counts the same registry and denies a
+                      new subagent past the limit; SubagentStop frees it. Agents never
+                      start agents.
+    low memory        with agents already running and less free RAM than one agent
+                      needs, the next one waits until memory is back
+
+  caps.agents: 2      pins it · 1 means strictly one agent at a time
+  caps.agents: auto   the default · orc doctor warns when a pinned number is above auto
 ```
 
 ```
